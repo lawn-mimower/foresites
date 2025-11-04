@@ -1,0 +1,285 @@
+.sitewisefb {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-6);
+}
+
+.sitewisefb h1 {
+  text-align: center;
+  margin-bottom: var(--space-8);
+  font-size: var(--font-size-4xl);
+  font-weight: 700;
+  color: var(--neutral-900);
+  letter-spacing: -0.025em;
+  position: relative;
+}
+
+.sitewisefb h1::after {
+  content: "";
+  position: absolute;
+  bottom: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80px;
+  height: 4px;
+  background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
+  border-radius: 2px;
+}
+
+/* Action Buttons */
+.edit-btn, .delete-btn, .save-btn, .cancel-btn {
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 80px;
+}
+
+.edit-btn {
+  background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
+  color: white;
+}
+
+.edit-btn:hover {
+  background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-700) 100%);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.delete-btn {
+  background: linear-gradient(135deg, var(--error-500) 0%, var(--error-600) 100%);
+  color: white;
+}
+
+.delete-btn:hover {
+  background: linear-gradient(135deg, var(--error-600) 0%, var(--error-700) 100%);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.save-btn {
+  background: linear-gradient(135deg, var(--success-500) 0%, var(--success-600) 100%);
+  color: white;
+}
+
+.save-btn:hover {
+  background: linear-gradient(135deg, var(--success-600) 0%, var(--success-700) 100%);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.cancel-btn {
+  background: linear-gradient(135deg, var(--neutral-500) 0%, var(--neutral-600) 100%);
+  color: white;
+}
+
+.cancel-btn:hover {
+  background: linear-gradient(135deg, var(--neutral-600) 0%, var(--neutral-700) 100%);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Form Inputs */
+.sitecard input {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--neutral-300);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-sm);
+  margin-bottom: var(--space-2);
+  transition: all 0.2s ease;
+}
+
+.sitecard input:focus {
+  outline: none;
+  border-color: var(--primary-500);
+  box-shadow: 0 0 0 3px var(--primary-100);
+}
+
+.sitebanner {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-6);
+  margin-top: var(--space-8);
+}
+
+.sitecard {
+  background: white;
+  border: 1px solid var(--neutral-200);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: all 0.3s ease;
+  text-align: center;
+  position: relative;
+}
+
+.sitecard:hover {
+  transform: translateY(-8px);
+  box-shadow: var(--shadow-xl);
+  border-color: var(--primary-200);
+}
+
+.sitecard::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
+}
+
+.sitecard img {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.sitecard:hover img {
+  transform: scale(1.05);
+}
+
+.sitecard-content {
+  padding: var(--space-6);
+}
+
+.sitecard h3 {
+  margin: 0 0 var(--space-3);
+  color: var(--neutral-900);
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.sitecard h4 {
+  margin: var(--space-2) 0;
+  font-size: var(--font-size-sm);
+  color: var(--neutral-600);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.sitecard .manager {
+  color: var(--primary-600);
+  font-weight: 600;
+}
+
+.sitecard .location {
+  color: var(--neutral-500);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.sitecard button {
+  margin: var(--space-6) 0 0;
+  padding: var(--space-3) var(--space-6);
+  background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
+  color: white;
+  border: none;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: var(--font-size-sm);
+  transition: all 0.2s ease;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.sitecard button::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s;
+}
+
+.sitecard button:hover::before {
+  left: 100%;
+}
+
+.sitecard button:hover {
+  background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-700) 100%);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.sitecard button:active {
+  transform: translateY(0);
+}
+
+/* Site Status Indicator */
+.site-status {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--success-500);
+  box-shadow: 0 0 0 3px white, 0 0 0 4px var(--success-200);
+}
+
+.site-status.inactive {
+  background: var(--neutral-400);
+  box-shadow: 0 0 0 3px white, 0 0 0 4px var(--neutral-200);
+}
+
+.site-status.maintenance {
+  background: var(--warning-500);
+  box-shadow: 0 0 0 3px white, 0 0 0 4px var(--warning-200);
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+  .sitebanner {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: var(--space-4);
+  }
+}
+
+@media (max-width: 768px) {
+  .sitewisefb {
+    padding: var(--space-4);
+  }
+  
+  .sitewisefb h1 {
+    font-size: var(--font-size-3xl);
+  }
+  
+  .sitebanner {
+    grid-template-columns: 1fr;
+    gap: var(--space-4);
+  }
+  
+  .sitecard img {
+    height: 180px;
+  }
+  
+  .sitecard-content {
+    padding: var(--space-4);
+  }
+}
+
+@media (max-width: 480px) {
+  .sitewisefb h1 {
+    font-size: var(--font-size-2xl);
+  }
+  
+  .sitecard img {
+    height: 160px;
+  }
+  
+  .sitecard h3 {
+    font-size: var(--font-size-lg);
+  }
+}

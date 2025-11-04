@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Auth Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
+        .success { color: green; }
+        .error { color: red; }
+        button { padding: 10px 15px; margin: 5px; }
+        input { padding: 8px; margin: 5px; width: 200px; }
+    </style>
+</head>
+<body>
+    <h1>Authentication Test</h1>
+    
+    <div class="test-section">
+        <h2>Login Test</h2>
+        <input type="email" id="email" placeholder="Email" value="admin@mdconsultants.com">
+        <input type="password" id="password" placeholder="Password" value="SuperAdmin123!">
+        <button onclick="testLogin()">Test Login</button>
+        <div id="login-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Token Verification Test</h2>
+        <button onclick="testTokenVerification()">Test Token Verification</button>
+        <div id="token-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Protected Route Test</h2>
+        <button onclick="testProtectedRoute()">Test Protected Route</button>
+        <div id="protected-result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Logout Test</h2>
+        <button onclick="testLogout()">Test Logout</button>
+        <div id="logout-result"></div>
+    </div>
+
+    <script>
+        let authToken = localStorage.getItem('authToken');
+
+        async function testLogin() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const resultDiv = document.getElementById('login-result');
+
+            try {
+                const response = await fetch('http://localhost:9999/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ email, password }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    authToken = data.token;
+                    localStorage.setItem('authToken', authToken);
+                    localStorage.setItem('userData', JSON.stringify(data.user));
+                    resultDiv.innerHTML = `<span class="success">✅ Login successful! User: ${data.user.username}</span>`;
+                } else {
+                    resultDiv.innerHTML = `<span class="error">❌ Login failed: ${data.error}</span>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ Network error: ${error.message}</span>`;
+            }
+        }
+
+        async function testTokenVerification() {
+            const resultDiv = document.getElementById('token-result');
+
+            if (!authToken) {
+                resultDiv.innerHTML = '<span class="error">❌ No token found. Please login first.</span>';
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:9999/api/auth/verify', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `<span class="success">✅ Token is valid! User: ${data.user.username}</span>`;
+                } else {
+                    resultDiv.innerHTML = `<span class="error">❌ Token verification failed: ${data.error}</span>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ Network error: ${error.message}</span>`;
+            }
+        }
+
+        async function testProtectedRoute() {
+            const resultDiv = document.getElementById('protected-result');
+
+            if (!authToken) {
+                resultDiv.innerHTML = '<span class="error">❌ No token found. Please login first.</span>';
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:9999/api/dashboard/stats', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `<span class="success">✅ Protected route accessible! Stats: ${JSON.stringify(data)}</span>`;
+                } else {
+                    resultDiv.innerHTML = `<span class="error">❌ Protected route failed: ${data.error}</span>`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ Network error: ${error.message}</span>`;
+            }
+        }
+
+        async function testLogout() {
+            const resultDiv = document.getElementById('logout-result');
+
+            if (!authToken) {
+                resultDiv.innerHTML = '<span class="error">❌ No token found. Please login first.</span>';
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:9999/api/auth/logout', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json',
+                    },
+                });
+
+                // Clear local storage
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('userData');
+                authToken = null;
+
+                if (response.ok) {
+                    resultDiv.innerHTML = '<span class="success">✅ Logout successful!</span>';
+                } else {
+                    resultDiv.innerHTML = '<span class="success">✅ Logout completed (client-side)</span>';
+                }
+            } catch (error) {
+                // Even if server logout fails, client logout is successful
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('userData');
+                authToken = null;
+                resultDiv.innerHTML = '<span class="success">✅ Logout completed (client-side)</span>';
+            }
+        }
+    </script>
+</body>
+</html>

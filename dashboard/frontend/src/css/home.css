@@ -1,0 +1,233 @@
+/* --- Global Layout --- */
+.home-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  padding: 3rem 4rem;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #f9fafb 0%, #f1f5f9 100%);
+  font-family: 'Inter', system-ui, sans-serif;
+  color: #0f172a;
+}
+
+/* --- Header --- */
+.home-header {
+  text-align: center;
+}
+
+.home-header h1 {
+  font-size: 2.2rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.02em;
+  color: #111827;
+}
+
+.home-header h1 span {
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.home-header p {
+  color: #64748b;
+  font-size: 1.05rem;
+  line-height: 1.6;
+}
+
+.user-role-info {
+  color: #3b82f6;
+  font-size: 0.9rem;
+  font-weight: 500;
+  margin-top: 0.5rem;
+  display: inline-block;
+  background: rgba(59, 130, 246, 0.1);
+  padding: 0.25rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+}
+
+.login-prompt {
+  color: #64748b;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+  display: inline-block;
+}
+
+.login-prompt a {
+  color: #3b82f6;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.login-prompt a:hover {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+/* --- Stats --- */
+.stats-section {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  gap: 1.2rem;
+  padding: 1.4rem 1.6rem;
+  background: white;
+  border-radius: 18px;
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.04);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+  backdrop-filter: blur(12px);
+}
+
+.stat-item:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+}
+
+.stat-icon {
+  font-size: 1.8rem;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  font-weight: 600;
+  position: relative;
+}
+
+.stat-icon-inner {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.stat-info h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.stat-info p {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 0.3rem;
+}
+
+/* --- Bottom Section --- */
+.insight-section {
+  display: grid;
+  grid-template-columns: 1.3fr 0.7fr;
+  gap: 2rem;
+}
+
+/* --- Query Panel --- */
+.query-panel, .highlight-panel {
+  background: white;
+  border-radius: 18px;
+  padding: 1.8rem 2rem;
+  box-shadow: 0 2px 18px rgba(0, 0, 0, 0.05);
+  transition: box-shadow 0.25s ease;
+}
+
+.query-panel:hover,
+.highlight-panel:hover {
+  box-shadow: 0 4px 22px rgba(0, 0, 0, 0.07);
+}
+
+.query-panel h3,
+.highlight-panel h3 {
+  margin: 0 0 1.2rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.query-field {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.query-field input {
+  flex: 1;
+  padding: 11px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  outline: none;
+  background: #f9fafb;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.query-field input:focus {
+  border-color: #3b82f6;
+  background: #fff;
+}
+
+.query-field button {
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  color: white;
+  border: none;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s ease, transform 0.15s ease;
+}
+
+.query-field button:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.query-result {
+  margin-top: 1rem;
+  font-size: 0.95rem;
+  color: #1e293b;
+  background: #f1f5f9;
+  border-left: 4px solid #3b82f6;
+  padding: 10px 14px;
+  border-radius: 8px;
+}
+
+/* --- Highlights --- */
+.highlight-panel ul {
+  margin: 0;
+  padding-left: 1.2rem;
+  color: #475569;
+  line-height: 1.9;
+  list-style-type: disc;
+}
+
+.highlight-panel li {
+  margin-bottom: 0.3rem;
+}
+
+.highlight-panel span {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  .home-wrapper {
+    padding: 2rem 1.5rem;
+  }
+
+  .insight-section {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-section {
+    grid-template-columns: 1fr;
+  }
+}
