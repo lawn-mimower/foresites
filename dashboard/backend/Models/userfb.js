@@ -19,7 +19,8 @@ const feedbackSchema = new mongoose.Schema({
   image: [String],
   suggestions: String,
   createdAt: { type: Date, default: Date.now },
-  resolved: { type: Boolean, default: false }
+  resolved: { type: Boolean, default: false },
+  resolvedAt: { type: Date, default: null } 
 });
 
 

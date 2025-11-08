@@ -5,11 +5,11 @@ const bodyparser=require('body-parser');
 const session=require('express-session');
 const path=require('path');
 const cors=require('cors');
-const MONGOURL='mongodb://abhishekdevelop04_db_user:OCo27RyqFn7wAbLK@ac-v6mdxgy-shard-00-00.lbt0hzv.mongodb.net:27017,ac-v6mdxgy-shard-00-01.lbt0hzv.mongodb.net:27017,ac-v6mdxgy-shard-00-02.lbt0hzv.mongodb.net:27017/?replicaSet=atlas-115nke-shard-0&ssl=true&authSource=admin';
+const MONGOURL=process.env.MONGOURL;
 const PORT=9999;
 
 
-const csvPath='./MD-report-data.csv';
+
 
 app.use("/uploads", express.static(path.join(__dirname, "..", "..", "uploads")));
 

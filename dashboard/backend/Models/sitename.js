@@ -3,6 +3,11 @@
 const mongoose = require('mongoose');
 
 const siteSchema = new mongoose.Schema({
+    siteCode:{
+        type:String,
+        required:true,
+        unique:true
+    },
     name: {
         type: String,
         required: true,

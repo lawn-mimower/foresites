@@ -8,6 +8,7 @@ export function Addform() {
   const [siteDesc, setSiteDesc] = useState("");
   const [sites, setSites] = useState([]);
   const [siteMsg, setSiteMsg] = useState("");
+  const [siteCode, setSiteCode] = useState("");
 
   const [passCode, setPassCode] = useState("");
   const [passSite, setPassSite] = useState("");
@@ -53,31 +54,37 @@ export function Addform() {
     refreshPassphrases();
   }, [apiCall]);
 
-  // 🧩 Create Site
-  const createSite = async (e) => {
-    e.preventDefault();
-    setSiteMsg("");
-    try {
-      const response = await apiCall(`${API}/sites`, {
-        method: "POST",
-        body: JSON.stringify({ name: siteName, description: siteDesc }),
-      });
 
-      if (response && !response.error) {
-        showToast("Site created successfully", "success");
-        setSiteMsg("Site created successfully");
-        setSiteName("");
-        setSiteDesc("");
-        refreshSites();
-      } else {
-        throw new Error("Failed to create site");
-      }
-    } catch (err) {
-      showToast("Failed to create site", "error");
-      setSiteMsg(`❌ ${err.message}`);
+
+// 🧩 Create Site (updated)
+const createSite = async (e) => {
+  e.preventDefault();
+  setSiteMsg("");
+  try {
+    const response = await apiCall(`${API}/sites`, {
+      method: "POST",
+      body: JSON.stringify({
+        siteCode,   // ✅ include new field
+        name: siteName,
+        description: siteDesc,
+      }),
+    });
+
+    if (response && !response.error) {
+      showToast("Site created successfully", "success");
+      setSiteMsg("Site created successfully");
+      setSiteName("");
+      setSiteDesc("");
+      setSiteCode("");
+      refreshSites();
+    } else {
+      throw new Error("Failed to create site");
     }
-  };
-
+  } catch (err) {
+    showToast("Failed to create site", "error");
+    setSiteMsg(`❌ ${err.message}`);
+  }
+};
   // 🧩 Create Passphrase
   const createPassphrase = async (e) => {
     e.preventDefault();
@@ -196,23 +203,32 @@ export function Addform() {
         <div className="form-card">
           <h2> Create Site</h2>
           <form onSubmit={createSite} className="form-section">
-            <label>Site Name</label>
-            <input
-              value={siteName}
-              onChange={(e) => setSiteName(e.target.value)}
-              placeholder="Enter unique site name"
-              required
-            />
+  <label>Site Code</label>
+  <input
+    value={siteCode}
+    onChange={(e) => setSiteCode(e.target.value)}
+    placeholder="Enter unique site code"
+    required
+  />
 
-            <label>Description</label>
-            <input
-              value={siteDesc}
-              onChange={(e) => setSiteDesc(e.target.value)}
-              placeholder="Optional description"
-            />
+  <label>Site Name</label>
+  <input
+    value={siteName}
+    onChange={(e) => setSiteName(e.target.value)}
+    placeholder="Enter unique site name"
+    required
+  />
 
-            <button type="submit" className="primary-btn">Add Site</button>
-          </form>
+  <label>Description</label>
+  <input
+    value={siteDesc}
+    onChange={(e) => setSiteDesc(e.target.value)}
+    placeholder="Optional description"
+  />
+
+  <button type="submit" className="primary-btn">Add Site</button>
+</form>
+
           {siteMsg && <p className="status-msg">{siteMsg}</p>}
 
           <h3>Existing Sites</h3>

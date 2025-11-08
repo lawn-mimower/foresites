@@ -271,3 +271,26 @@
     gap: 6px;
   }
 }
+
+
+.generate-report-btn {
+  background-color: #007bff;
+  color: white;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-left: 10px;
+  transition: 0.2s;
+}
+
+.generate-report-btn:hover {
+  background-color: #0056b3;
+}
+
+.download-report-link {
+  margin-left: 10px;
+  color: green;
+  text-decoration: underline;
+  font-weight: 500;
+}

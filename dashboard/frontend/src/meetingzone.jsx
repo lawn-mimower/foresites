@@ -1,35 +1,101 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
+import { showToast } from "./Toast";
 import "./css/meetzone.css";
 
 export function MeetingZone() {
   const [feedbacks, setFeedbacks] = useState([]);
   const [completed, setCompleted] = useState({});
   const [loading, setLoading] = useState(false);
-  const { apiCall } = useAuth();
+  const [imageUrls, setImageUrls] = useState({});
+  const [voiceUrls, setVoiceUrls] = useState({});
+  const { apiCall, isAdmin } = useAuth();
+
+  const API = "http://localhost:9999/api/dashboard";
+  const BASE_URL = "http://localhost:9999";
 
   useEffect(() => {
     fetchAllFeedbacks();
   }, [apiCall]);
 
+  // ✅ Fetch feedbacks and normalize image/voice URLs
   const fetchAllFeedbacks = async () => {
     setLoading(true);
     try {
-      const response = await apiCall("http://localhost:9999/api/dashboard/feedbacks");
-      if (response && !response.error) {
-        const data = await response.json();
-        setFeedbacks(Array.isArray(data) ? data : []);
-      } else {
-        setFeedbacks([]);
-      }
-    } catch (error) {
-      console.error('Error fetching feedbacks:', error);
+      const response = await apiCall(`${API}/feedbacks`);
+      if (!response || response.error) return setFeedbacks([]);
+
+      const data = await response.json();
+      const feedbackData = Array.isArray(data)
+        ? data.map((fb) => ({
+            feedback_type: fb.feedback_type || "text",
+            category: fb.category || "miscellaneous",
+            ...fb,
+          }))
+        : [];
+
+      // 🧭 Build image & voice maps
+      const imgMap = {};
+      const voiceMap = {};
+
+      feedbackData.forEach((fb) => {
+        // 🖼️ Handle images
+        if (fb.image && fb.image.length > 0) {
+          fb.image.forEach((img, i) => {
+            let finalPath = img?.trim();
+            if (!finalPath) return;
+
+            if (!finalPath.startsWith("http")) {
+              if (!finalPath.startsWith("/uploads/")) {
+                if (finalPath.startsWith("uploads/")) {
+                  finalPath = "/" + finalPath;
+                } else if (finalPath.startsWith("images/")) {
+                  finalPath = `/uploads/${finalPath}`;
+                } else {
+                  finalPath = `/uploads/images/${finalPath}`;
+                }
+              }
+              finalPath = `${BASE_URL}${finalPath}`;
+            }
+
+            imgMap[`${fb._id}_${i}`] = finalPath;
+          });
+        }
+
+        // 🎧 Handle voice feedback
+        if (fb.voice_url) {
+          let voicePath = fb.voice_url?.trim();
+          if (!voicePath) return;
+
+          if (!voicePath.startsWith("http")) {
+            if (!voicePath.startsWith("/uploads/")) {
+              if (voicePath.startsWith("uploads/")) {
+                voicePath = "/" + voicePath;
+              } else if (voicePath.startsWith("voice/")) {
+                voicePath = `/uploads/${voicePath}`;
+              } else {
+                voicePath = `/uploads/voice/${voicePath}`;
+              }
+            }
+            voicePath = `${BASE_URL}${voicePath}`;
+          }
+
+          voiceMap[fb._id] = voicePath;
+        }
+      });
+
+      setImageUrls(imgMap);
+      setVoiceUrls(voiceMap);
+      setFeedbacks(feedbackData);
+    } catch (err) {
+      console.error("Error fetching feedbacks:", err);
       setFeedbacks([]);
     } finally {
       setLoading(false);
     }
   };
 
+  // ✅ Sort unresolved by category priority
   const categoryPriority = [
     "safety_compliance",
     "design_conflicts",
@@ -37,190 +103,243 @@ export function MeetingZone() {
     "workflow_issues",
     "miscellaneous",
   ];
-  
+
   const sortUnresolvedByPriority = async () => {
     setLoading(true);
     try {
-      const response = await apiCall("http://localhost:9999/api/dashboard/feedbacks");
-      if (response && !response.error) {
-        const data = await response.json();
-        let feedbackArray = Array.isArray(data) ? data : [];
-        
-        // Filter out completed issues and sort by priority
-        const unresolvedIssues = feedbackArray.filter(fb => !completed[fb._id]);
-        
-        unresolvedIssues.sort((a, b) => {
-          return (
-            categoryPriority.indexOf(a.category) -
-            categoryPriority.indexOf(b.category)
-          );
-        });
-  
-        setFeedbacks(unresolvedIssues);
-      } else {
-        setFeedbacks([]);
-      }
-    } catch (error) {
-      console.error('Error sorting feedbacks:', error);
-      setFeedbacks([]);
+      const response = await apiCall(`${API}/feedbacks`);
+      if (!response || response.error) return;
+      const data = await response.json();
+      let feedbackArray = Array.isArray(data) ? data : [];
+      const unresolved = feedbackArray.filter((fb) => !completed[fb._id]);
+      unresolved.sort(
+        (a, b) =>
+          categoryPriority.indexOf(a.category) -
+          categoryPriority.indexOf(b.category)
+      );
+      setFeedbacks(unresolved);
+    } catch (err) {
+      console.error("Error sorting:", err);
     } finally {
       setLoading(false);
     }
   };
-  
-  const toggleTodo = (id) => {
-    setCompleted((prev) => ({ ...prev, [id]: !prev[id] }));
+
+ // ✅ Toggle resolved (auto-updates CSV in backend)
+  const toggleTodo = async (id, currentResolved) => {
+    try {
+      const response = await apiCall(`${API}/feedbacks/${id}/resolve`, {
+        method: "PUT",
+        body: JSON.stringify({ resolved: !currentResolved }),
+      });
+
+      if (response && !response.error) {
+        const updated = await response.json();
+        setFeedbacks((prev) => prev.map((f) => (f._id === id ? updated.updated : f)));
+        setCompleted((prev) => ({ ...prev, [id]: updated.updated.resolved }));
+
+        showToast(
+          updated.updated.resolved
+            ? "✅ Feedback marked as resolved (CSV updated)"
+            : "⚠️ Feedback marked as unresolved",
+          "success"
+        );
+      }
+    } catch (err) {
+      console.error("Error toggling feedback:", err);
+    }
   };
 
-  // Calculate stats
-  const totalFeedbacks = feedbacks.length;
-  const completedCount = Object.values(completed).filter(Boolean).length;
-  const pendingCount = totalFeedbacks - completedCount;
+  // ✅ Stats
+  const total = feedbacks.length;
+  const done = Object.values(completed).filter(Boolean).length;
+  const pending = total - done;
 
   return (
-    <div className="meetingZone">
-      <div className="meeting-header">
-        <h1>Meeting Zone</h1>
-        <p className="meeting-subtitle">Prioritize and manage construction feedbacks efficiently</p>
+    <div className="all-feedbacks">
+      <header className="fb-header">
+        <div>
+          <h1>Meeting Zone</h1>
+          <p className="sub">
+            Prioritize and review construction feedbacks efficiently.
+          </p>
+        </div>
+
+        <div className="sort-controls">
+          <button
+            onClick={fetchAllFeedbacks}
+            className="refresh-btn"
+            style={{
+              background: "#4b7bec",
+              color: "#fff",
+              border: "none",
+              padding: "8px 12px",
+              borderRadius: "8px",
+              cursor: "pointer",
+            }}
+          >
+            Refresh All
+          </button>
+
+          <button
+            onClick={sortUnresolvedByPriority}
+            className="sort-btn"
+            style={{
+              background: "#20bf6b",
+              color: "#fff",
+              border: "none",
+              padding: "8px 12px",
+              borderRadius: "8px",
+              marginLeft: "10px",
+              cursor: "pointer",
+            }}
+          >
+            Sort by Priority
+          </button>
+        </div>
+      </header>
+
+      {/* ✅ Stats Summary */}
+      <div className="stats-summary">
+        {[
+          { label: "Total", value: total },
+          { label: "Pending", value: pending },
+          { label: "Completed", value: done },
+          {
+            label: "Progress",
+            value: `${total ? Math.round((done / total) * 100) : 0}%`,
+          },
+        ].map((stat, i) => (
+          <div className="stat-item" key={i}>
+            <div className="number">{stat.value}</div>
+            <div className="label">{stat.label}</div>
+          </div>
+        ))}
       </div>
 
-      {/* Stats Overview */}
-      <div className="stats-overview">
-        <div className="stat-card">
-          <div className="stat-icon">
-            <div className="stat-icon-inner"></div>
-          </div>
-          <div className="stat-content">
-            <h3>{totalFeedbacks}</h3>
-            <p>Total Issues</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">
-            <div className="stat-icon-inner"></div>
-          </div>
-          <div className="stat-content">
-            <h3>{pendingCount}</h3>
-            <p>Pending</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">
-            <div className="stat-icon-inner"></div>
-          </div>
-          <div className="stat-content">
-            <h3>{completedCount}</h3>
-            <p>Completed</p>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">
-            <div className="stat-icon-inner"></div>
-          </div>
-          <div className="stat-content">
-            <h3>{totalFeedbacks ? Math.round((completedCount / totalFeedbacks) * 100) : 0}%</h3>
-            <p>Progress</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="button-group">
-        <button className="refresh-btn" onClick={fetchAllFeedbacks}>
-           Refresh All
-        </button>
-        <button className="last24-btn" onClick={sortUnresolvedByPriority}>
-          Sort Unresolved by Priority 
-        </button>
-      </div>
-
-      <div className="feedback-section">
-        <div className="section-header">
-          <h2>Feedback Todo List</h2>
-          <div className="section-actions">
-            <span className="filter-info">
-              {feedbacks.length} {feedbacks.length === 1 ? 'issue' : 'issues'} found
-            </span>
-          </div>
-        </div>
-
+      {/* ✅ Feedback List */}
+      <div className="feedback-list">
         {loading ? (
-          <div className="loading-state">
-            <div className="loading-spinner"></div>
-            <p>Loading feedbacks...</p>
-          </div>
+          <p>Loading feedbacks...</p>
         ) : feedbacks.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-icon">
-              <div className="empty-icon-inner"></div>
-            </div>
             <h3>No feedbacks found</h3>
             <p>All caught up! No pending issues at the moment.</p>
           </div>
         ) : (
-          <div className="tasks-container">
-            {feedbacks.map((fb) => (
-              <div
-                key={fb._id}
-                className={`task ${completed[fb._id] ? "completed" : ""}`}
-              >
-                <div className="task-header">
-                  <h3>{fb.feedback}</h3>
-                  <button
-                    onClick={() => toggleTodo(fb._id)}
-                    className={`status-btn ${
-                      completed[fb._id] ? "done" : "pending"
-                    }`}
-                  >
-                    {completed[fb._id] ? "Completed" : "Mark Complete"}
-                  </button>
-                </div>
-
-                <div className="task-body">
-                  <div className="task-meta">
-                    <div className="meta-item">
-                      <span className="meta-label">Site:</span>
-                      <span className="meta-value">{fb.sitename}</span>
-                    </div>
-                    <div className="meta-item">
-                      <span className="meta-label">By:</span>
-                      <span className="meta-value">{fb.name}</span>
-                    </div>
-                    <div className="meta-item">
-                      <span className="meta-label">Code:</span>
-                      <span className="meta-value">{fb.code}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="category-section">
-                    <span className="meta-label">Category:</span>
-                    <span className={`category-badge ${fb.category}`}>
-                      {fb.category.replace("_", " ")}
-                    </span>
-                  </div>
-                  
-                  {fb.solution && (
-                    <div className="solution-section">
-                      <span className="meta-label">Solution:</span>
-                      <p className="solution-text">{fb.solution}</p>
-                    </div>
-                  )}
-                  
-                  {fb.suggestions && (
-                    <div className="suggestions-section">
-                      <span className="meta-label">Suggestions:</span>
-                      <p className="suggestions-text">{fb.suggestions}</p>
-                    </div>
-                  )}
-                  
-                  <div className="task-footer">
-                    <p className="timestamp">
-                      {new Date(fb.createdAt).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
+          feedbacks.map((fb) => (
+            <div
+              key={fb._id}
+              className={`fb-card ${completed[fb._id] ? "resolved" : "pending"}`}
+            >
+              <div className="fb-header-row">
+                <h3>
+                  {fb.feedback ||
+                    (fb.feedback_type === "voice"
+                      ? "🎤 Voice Feedback"
+                      : "No feedback text")}
+                </h3>
+                <button
+                  onClick={() => toggleTodo(fb._id, completed[fb._id])}
+                  className={`status-btn ${completed[fb._id] ? "done" : ""}`}
+                >
+                  {completed[fb._id] ? "Completed" : "Mark Complete"}
+                </button>
               </div>
-            ))}
-          </div>
+
+              <div className="fb-details">
+                <p>
+                  {fb.sitename && (
+                    <>
+                      <strong>Site:</strong> {fb.sitename}{" "}
+                    </>
+                  )}
+                  {fb.name && (
+                    <>
+                      | <strong>By:</strong> {fb.name}{" "}
+                    </>
+                  )}
+                  {fb.code && (
+                    <>
+                      | <strong>Code:</strong> {fb.code}{" "}
+                    </>
+                  )}
+                  {fb.phone && (
+                    <>
+                      | <strong>Phone:</strong> {fb.phone}
+                    </>
+                  )}
+                </p>
+
+                <p>
+                  <strong>Category:</strong>{" "}
+                  <span
+                    className={`cat-badge ${fb.category || "no-category"}`}
+                  >
+                    {(fb.category && fb.category.replace("_", " ")) ||
+                      "Uncategorized"}
+                  </span>
+                </p>
+
+                <p>
+                  <strong>Type:</strong>{" "}
+                  {fb.feedback_type === "voice" ? "🎙 Voice" : "💬 Text"}
+                </p>
+
+                {/* 🎧 Voice feedback (normalized) */}
+                {fb.feedback_type === "voice" && voiceUrls[fb._id] && (
+                  <div className="voice-player">
+                    <p>
+                      <strong>Voice Message:</strong>
+                    </p>
+                    <audio controls preload="none" src={voiceUrls[fb._id]} />
+                  </div>
+                )}
+
+                {/* 🖼️ Images (normalized) */}
+                {fb.image && fb.image.length > 0 && (
+                  <div className="feedback-images">
+                    <p>
+                      <strong>Images:</strong>
+                    </p>
+                    <div className="image-gallery">
+                      {fb.image.map((_, i) => {
+                        const finalPath = imageUrls[`${fb._id}_${i}`];
+                        return (
+                          <img
+                            key={i}
+                            src={finalPath}
+                            alt={`Feedback ${i + 1}`}
+                            className="feedback-image"
+                            onClick={() => window.open(finalPath, "_blank")}
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Solution + Suggestions */}
+                {fb.solution && (
+                  <p>
+                    <strong>Solution:</strong> {fb.solution}
+                  </p>
+                )}
+                {fb.suggestions && (
+                  <p>
+                    <strong>Suggestions:</strong> {fb.suggestions}
+                  </p>
+                )}
+
+                {/* Timestamp */}
+                {fb.createdAt && (
+                  <p className="timestamp">
+                    {new Date(fb.createdAt).toLocaleString()}
+                  </p>
+                )}
+              </div>
+            </div>
+          ))
         )}
       </div>
     </div>

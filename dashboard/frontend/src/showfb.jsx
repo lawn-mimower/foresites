@@ -11,60 +11,12 @@ export function AllFeedbacks() {
   const [editValues, setEditValues] = useState({ feedback: "", solution: "" });
   const [imageUrls, setImageUrls] = useState({});
   const [voiceUrls, setVoiceUrls] = useState({});
-  const [reportStatus, setReportStatus] = useState(""); // 🧾 report status
+  const [loadingReport, setLoadingReport] = useState(false); // 🆕
+  const [reportUrl, setReportUrl] = useState(null); // 🆕
 
-  const { apiCall, user, isAdmin } = useAuth();
-
+  const { apiCall, isAdmin } = useAuth();
   const API = "http://localhost:9999/api/dashboard";
   const BASE_URL = "http://localhost:9999";
-
-  // 🧾 Generate Report (Admin Only)
-  const handleGenerateReport = async () => {
-    setReportStatus("Generating...");
-    try {
-      const token = localStorage.getItem("token") || sessionStorage.getItem("token");
-      if (!token) {
-        setReportStatus("⚠️ No access token found. Please log in again.");
-        showToast("⚠️ Login required", "error");
-        return;
-      }
-
-      const res = await fetch(`${API}/generate-report`, {
-        method: "GET",
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        credentials: "include",
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        console.log("📊 Report Summary:", data.summary);
-        setReportStatus("✅ Report generated successfully!");
-        showToast("✅ Report generated successfully!", "success");
-
-        // 🧾 Automatically download the generated CSV file
-        const link = document.createElement("a");
-        link.href = `${BASE_URL}/MD-report-data.csv`;
-        link.download = "MD-report-data.csv";
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-      } else {
-        const msg = data.message || data.error || "Error generating report";
-        setReportStatus(`⚠️ ${msg}`);
-        showToast(msg, "error");
-      }
-    } catch (err) {
-      console.error("❌ Report generation failed:", err);
-      setReportStatus("❌ Failed to generate report");
-      showToast("❌ Failed to generate report", "error");
-    }
-
-    setTimeout(() => setReportStatus(""), 4000);
-  };
 
   // 🧠 Fetch all feedbacks
   useEffect(() => {
@@ -141,17 +93,25 @@ export function AllFeedbacks() {
     fetchFeedbacks();
   }, [apiCall]);
 
-  // ✅ Toggle resolved
+  // ✅ Toggle resolved (auto-updates CSV in backend)
   const toggleTodo = async (id, currentResolved) => {
     try {
       const response = await apiCall(`${API}/feedbacks/${id}/resolve`, {
         method: "PUT",
         body: JSON.stringify({ resolved: !currentResolved }),
       });
+
       if (response && !response.error) {
         const updated = await response.json();
-        setFeedbacks((prev) => prev.map((f) => (f._id === id ? updated : f)));
-        setCompleted((prev) => ({ ...prev, [id]: updated.resolved }));
+        setFeedbacks((prev) => prev.map((f) => (f._id === id ? updated.updated : f)));
+        setCompleted((prev) => ({ ...prev, [id]: updated.updated.resolved }));
+
+        showToast(
+          updated.updated.resolved
+            ? "✅ Feedback marked as resolved (CSV updated)"
+            : "⚠️ Feedback marked as unresolved",
+          "success"
+        );
       }
     } catch (err) {
       console.error("Error toggling feedback:", err);
@@ -198,6 +158,41 @@ export function AllFeedbacks() {
     }
   };
 
+// 🧾 Download existing report logic
+const downloadReport = async () => {
+  try {
+    setLoadingReport(true);
+
+    const res = await fetch(`${BASE_URL}/api/generate-report`, { method: "POST" });
+
+    if (!res.ok) throw new Error("Report download failed");
+
+    // Convert response to Blob (PDF file)
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+
+    // Trigger browser download
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "construction_site_report.pdf";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    // Optional: Store URL if you want to preview the file in your dashboard
+    setReportUrl(url);
+
+    showToast("📄 Report downloaded successfully!", "success");
+  } catch (err) {
+    console.error("Error downloading report:", err);
+    showToast("Failed to download report", "error");
+  } finally {
+    setLoadingReport(false);
+  }
+};
+
+
+
   // ✅ Sorting
   let displayed = [...feedbacks];
   if (sortBy === "resolved") displayed = displayed.filter((f) => f.resolved);
@@ -229,41 +224,29 @@ export function AllFeedbacks() {
             <option value="unresolved">Unresolved</option>
           </select>
 
-          {/* 🧾 Admin-only Generate Report Button */}
-          {isAdmin() && (
-            <>
-              <button
-                onClick={handleGenerateReport}
-                className="generate-report-btn"
-                style={{
-                  background: "#0077cc",
-                  color: "white",
-                  border: "none",
-                  padding: "8px 12px",
-                  borderRadius: "8px",
-                  cursor: "pointer",
-                  fontSize: "0.9rem",
-                  marginLeft: "10px",
-                }}
-              >
-                Generate Report
-              </button>
-              {reportStatus && (
-                <span
-                  style={{
-                    marginLeft: "10px",
-                    fontSize: "0.8rem",
-                    color: "var(--text-muted)",
-                  }}
-                >
-                  {reportStatus}
-                </span>
-              )}
-            </>
+          {/* 🆕 Generate Report Button */}
+          <button
+            className="generate-report-btn"
+            onClick={downloadReport}
+            disabled={loadingReport}
+          >
+            {loadingReport ? "Generating..." : "Generate Report"}
+          </button>
+
+          {/* 🆕 Download link */}
+          {reportUrl && (
+            <a
+              href={reportUrl}
+              download="feedback_report.pdf"
+              className="download-report-link"
+            >
+              Download PDF
+            </a>
           )}
         </div>
       </header>
 
+      {/* Summary Cards */}
       <div className="stats-summary">
         {[
           { label: "Total", value: total },
@@ -278,7 +261,7 @@ export function AllFeedbacks() {
         ))}
       </div>
 
-
+      {/* Feedback List */}
       <div className="feedback-list">
         {displayed.map((fb) => (
           <div key={fb._id} className={`fb-card ${fb.resolved ? "resolved" : "pending"}`}>
@@ -293,7 +276,9 @@ export function AllFeedbacks() {
             </div>
 
             <div className="fb-details">
-              <p><strong>Site:</strong> {fb.sitename} | <strong>By:</strong> {fb.name} | <strong>Code:</strong> {fb.code}</p>
+              <p>
+                <strong>Site:</strong> {fb.sitename} | <strong>By:</strong> {fb.name} | <strong>Code:</strong> {fb.code}
+              </p>
               <p>
                 <strong>Category:</strong>{" "}
                 <span className={`cat-badge ${fb.category || "no-category"}`}>
@@ -305,17 +290,21 @@ export function AllFeedbacks() {
                 <div className="edit-area">
                   <input
                     value={editValues.feedback}
-                    onChange={(e) => setEditValues(v => ({ ...v, feedback: e.target.value }))}
+                    onChange={(e) => setEditValues((v) => ({ ...v, feedback: e.target.value }))}
                     placeholder="Feedback"
                   />
                   <input
                     value={editValues.solution}
-                    onChange={(e) => setEditValues(v => ({ ...v, solution: e.target.value }))}
+                    onChange={(e) => setEditValues((v) => ({ ...v, solution: e.target.value }))}
                     placeholder="Solution"
                   />
                   <div className="edit-btns">
-                    <button className="save-btn" onClick={() => saveEdit(fb._id)}>Save</button>
-                    <button className="cancel-btn" onClick={() => setEditingId(null)}>Cancel</button>
+                    <button className="save-btn" onClick={() => saveEdit(fb._id)}>
+                      Save
+                    </button>
+                    <button className="cancel-btn" onClick={() => setEditingId(null)}>
+                      Cancel
+                    </button>
                   </div>
                 </div>
               ) : (

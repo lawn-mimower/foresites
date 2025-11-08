@@ -6,8 +6,8 @@ dotenv.config();
 const chatbotRoutes = require('./route.js');
 
 // Connection details
-const PORT = process.env.PORT || 3000;
-const MONGO_URI = 'mongodb://abhishekdevelop04_db_user:OCo27RyqFn7wAbLK@ac-v6mdxgy-shard-00-00.lbt0hzv.mongodb.net:27017,ac-v6mdxgy-shard-00-01.lbt0hzv.mongodb.net:27017,ac-v6mdxgy-shard-00-02.lbt0hzv.mongodb.net:27017/?replicaSet=atlas-115nke-shard-0&ssl=true&authSource=admin';
+const PORT = process.env.PORT ;
+const MONGO_URI = process.env.MONGO_URI;
 
 app.use(express.json());
 

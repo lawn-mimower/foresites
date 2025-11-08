@@ -142,14 +142,6 @@ export function Login() {
         </form>
 
         <div className="login-footer">
-          <div className="demo-credentials">
-            <h4>Demo Credentials:</h4>
-            <div className="credential-item">
-              <strong>Super Admin:</strong>
-              <p>Email: admin@mdconsultants.com</p>
-              <p>Password: SuperAdmin123!</p>
-            </div>
-          </div>
           
           <div className="login-links">
             <Link to="/" className="back-link">

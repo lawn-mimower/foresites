@@ -1,16 +1,26 @@
+
 const axios = require('axios');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const path = require('path');
+const dotenv = require('dotenv');
+const { createObjectCsvWriter } = require('csv-writer');
 
+// Models
 const Feedback = require('../chatbot/Models/userfbschema');
-const sitename = require('../chatbot/Models/sitename');
-const passphrase = require('../chatbot/Models/passphrase');
+const SitenameModel = require('../chatbot/Models/sitename');
+const PassphraseModel = require('../chatbot/Models/passphrase');
 
-const accessToken = '***REMOVED-META-WHATSAPP-TOKEN***';
-const phone_number_id = '753635067842107';
-const apiVersion = process.env.WHATSAPP_API_VERSION || 'v21.0';
+// Environment Variables
+const accessToken=process.env.accessToken;
+const phone_number_id = process.env.phone_number_id;
+const apiVersion = process.env.WHATSAPP_API_VERSION || 'v24.0';
 
+if (!accessToken || !phone_number_id) {
+  console.warn('⚠️ Missing WhatsApp API credentials — please set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID.');
+}
+
+// State Holders
 const userStates = {};
 const processedMessages = new Set();
 
@@ -30,10 +40,9 @@ async function sendText(to, body) {
 
 async function sendList(to, header, body, options = []) {
   try {
-    // WhatsApp list title limit = 24 chars
     const cleanOptions = options.map(o => ({
       id: o.id,
-      title: o.title.substring(0, 24)
+      title: o.title.substring(0, 24),
     }));
 
     const payload = {
@@ -44,8 +53,8 @@ async function sendList(to, header, body, options = []) {
         type: 'list',
         header: { type: 'text', text: header.substring(0, 24) },
         body: { text: body },
-        action: { button: 'Select', sections: [{ title: 'Choose One', rows: cleanOptions }] }
-      }
+        action: { button: 'Select', sections: [{ title: 'Choose One', rows: cleanOptions }] },
+      },
     };
 
     await axios.post(
@@ -72,7 +81,7 @@ async function downloadMedia(mediaId, folderName, userName = 'anonymous') {
 
     const mediaRes = await axios.get(mediaUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
-      responseType: 'arraybuffer'
+      responseType: 'arraybuffer',
     });
 
     const contentType = mediaRes.headers['content-type'] || 'application/octet-stream';
@@ -80,7 +89,6 @@ async function downloadMedia(mediaId, folderName, userName = 'anonymous') {
     const dir = path.join(__dirname, '../uploads', folderName);
     await fsPromises.mkdir(dir, { recursive: true });
 
-    // 🕒 Create filename with date + name
     const dateStr = new Date().toISOString().replace(/[:.]/g, '-');
     const safeName = userName.replace(/[^a-zA-Z0-9-_]/g, '_');
     const filename = `${dateStr}_${safeName}.${ext}`;
@@ -89,7 +97,6 @@ async function downloadMedia(mediaId, folderName, userName = 'anonymous') {
     await fsPromises.writeFile(filePath, mediaRes.data);
     console.log(`✅ Saved ${folderName}: ${filePath}`);
 
-    // return relative path for frontend use
     return `/uploads/${folderName}/${filename}`;
   } catch (err) {
     console.error('❌ downloadMedia error:', err.response?.data || err.message);
@@ -102,7 +109,7 @@ const steps = {
   askName: async (from, user, msgObj, text) => {
     user.feedback.name = text;
     user.step = 'askSite';
-    const sites = await sitename.find({}).limit(20).lean();
+    const sites = await SitenameModel.find({}).limit(20).lean();
     const opts = sites.length
       ? sites.map(s => ({ id: s.name, title: s.name }))
       : [{ id: 'Site Alpha', title: 'Site Alpha' }];
@@ -110,7 +117,7 @@ const steps = {
   },
 
   askSite: async (from, user, msgObj, text) => {
-    const site = await sitename.findOne({ name: { $regex: `^${text}$`, $options: 'i' } });
+    const site = await SitenameModel.findOne({ name: { $regex: `^${text}$`, $options: 'i' } });
     if (!site) return sendText(from, `⚠️ Site "${text}" not found. Try again.`);
 
     user.feedback.sitename = site.name;
@@ -119,9 +126,9 @@ const steps = {
   },
 
   askPassphrase: async (from, user, msgObj, text) => {
-    const code = await passphrase.findOne({
+    const code = await PassphraseModel.findOne({
       code: { $regex: `^${text}$`, $options: 'i' },
-      site: { $regex: `^${user.feedback.sitename}$`, $options: 'i' }
+      site: { $regex: `^${user.feedback.sitename}$`, $options: 'i' },
     });
 
     if (!code) return sendText(from, '❌ Invalid passphrase. Try again.');
@@ -131,11 +138,11 @@ const steps = {
 
   askCategory: async (from, user) => {
     const categories = [
-      { id: 'safety_compliance', title: 'Safety&Compliance' },
+      { id: 'safety_compliance', title: 'Safety & Compliance' },
       { id: 'design_conflicts', title: 'Design' },
       { id: 'resource_blockers', title: 'Resources' },
       { id: 'workflow_issues', title: 'Workflow' },
-      { id: 'miscellaneous', title: 'Other' }
+      { id: 'miscellaneous', title: 'Other' },
     ];
     await sendList(from, 'Category', 'Select issue category:', categories);
     user.step = 'awaitCategory';
@@ -146,7 +153,7 @@ const steps = {
     user.step = 'chooseFeedbackType';
     await sendList(from, 'Feedback Type', 'Choose how to give feedback:', [
       { id: 'voice', title: '🎙️ Voice' },
-      { id: 'text', title: '✍️ Text' }
+      { id: 'text', title: '✍️ Text' },
     ]);
   },
 
@@ -164,8 +171,7 @@ const steps = {
   },
 
   awaitVoice: async (from, user, msgObj) => {
-    const mediaId =
-      msgObj.audio?.id || msgObj.voice?.id || msgObj.audio_message?.id;
+    const mediaId = msgObj.audio?.id || msgObj.voice?.id || msgObj.audio_message?.id;
     if (!mediaId) return sendText(from, '⚠️ No audio found. Please resend.');
 
     const localPath = await downloadMedia(mediaId, 'voice', user.feedback.name || 'user');
@@ -173,7 +179,7 @@ const steps = {
     user.step = 'askImage';
     await sendList(from, 'Upload Image', 'Would you like to attach an image?', [
       { id: 'yes', title: 'Yes' },
-      { id: 'no', title: 'No' }
+      { id: 'no', title: 'No' },
     ]);
   },
 
@@ -188,7 +194,7 @@ const steps = {
     user.step = 'askImage';
     await sendList(from, 'Upload Image', 'Would you like to attach an image?', [
       { id: 'yes', title: 'Yes' },
-      { id: 'no', title: 'No' }
+      { id: 'no', title: 'No' },
     ]);
   },
 
@@ -212,27 +218,187 @@ const steps = {
     await steps.saveFeedback(from, user);
   },
 
-  saveFeedback: async (from, user) => {
-    try {
-      user.feedback.phone = from;
-      user.feedback.createdAt = new Date();
+// 🧾 SAVE FEEDBACK + Fully Standardized CSV Integration (with newline fix)
+saveFeedback: async (from, user) => {
+  try {
+    user.feedback.phone = from;
+    user.feedback.createdAt = new Date();
 
-      const saved = await Feedback.create(user.feedback);
-      console.log('\n📝 Feedback Saved:', saved);
+    const saved = await Feedback.create(user.feedback);
+    console.log('\n📝 Feedback Saved:', saved);
 
-      await sendText(from, '🙏 Thank you! Your feedback was saved successfully.');
-      delete userStates[from];
-    } catch (err) {
-      console.error('❌ saveFeedback error:', err.message);
-      await sendText(from, '⚠️ Error saving feedback. Try again later.');
+    // --- Define Report Paths ---
+    const { REPORTS_DIR, DAYWISE_CSV, SITEWISE_CSV } = require('../config/paths');
+    if (!fs.existsSync(REPORTS_DIR)) fs.mkdirSync(REPORTS_DIR, { recursive: true });
+
+    // --- Extract Required Fields ---
+    const createdAtISO = saved.createdAt.toISOString();
+    const today = createdAtISO.split('T')[0];
+    const { sitename, category, resolved } = saved;
+    const feedbackId = saved._id.toString();
+
+    // --- Get Site Metadata ---
+    const siteDoc = await SitenameModel.findOne({ name: sitename });
+    const siteCode = siteDoc ? siteDoc.siteCode : 'N/A';
+
+    // ====================================================
+    // 1️⃣  APPEND TO DAYWISE CSV  (append-only per feedback)
+    // ====================================================
+    const dayHeaders = [
+      'feedback_id',
+      'createdAt',
+      'date',
+      'site code',
+      'name',
+      'category',
+      'resolved',
+      'resolvedAt',
+      'time_to_resolve_hrs',
+    ];
+
+    // Ensure CSV file exists with headers
+    if (!fs.existsSync(DAYWISE_CSV)) {
+      fs.writeFileSync(DAYWISE_CSV, dayHeaders.join(',') + '\n', 'utf8');
     }
+
+    // --- Build new row ---
+    const newDayRow = [
+      feedbackId,
+      createdAtISO,
+      today,
+      siteCode,
+      sitename,
+      category,
+      resolved ? 'Yes' : 'No',
+      '', // resolvedAt
+      '', // time_to_resolve_hrs
+    ].join(',');
+
+    // ✅ Fix: ensure newline before appending if last line doesn’t end with \n
+    try {
+      let needsNewline = true;
+      const stats = fs.statSync(DAYWISE_CSV);
+      if (stats.size > 0) {
+        const fd = fs.openSync(DAYWISE_CSV, 'r');
+        const buffer = Buffer.alloc(1);
+        fs.readSync(fd, buffer, 0, 1, stats.size - 1);
+        fs.closeSync(fd);
+        if (buffer.toString() === '\n') needsNewline = false;
+      }
+      fs.appendFileSync(DAYWISE_CSV, (needsNewline ? '\n' : '') + newDayRow + '\n', 'utf8');
+    } catch (err) {
+      fs.appendFileSync(DAYWISE_CSV, newDayRow + '\n', 'utf8');
+    }
+
+    console.log('✅ Daywise CSV appended successfully (newline safe).');
+
+    // ====================================================
+    // 2️⃣  UPDATE SITEWISE CSV (aggregate per site)
+    // ====================================================
+    const siteHeaders = [
+      'date', 'site code', 'name', 'feedback_ids',
+      'safety_compliance_raised', 'design_conflicts_raised', 'resource_blockers_raised',
+      'workflow_issues_raised', 'miscellaneous_raised',
+      'safety_compliance_solved', 'design_conflicts_solved', 'resource_blockers_solved',
+      'workflow_issues_solved', 'miscellaneous_solved',
+      'total_raised', 'total_solved', 'total_pending',
+    ];
+
+    // Ensure CSV exists with headers
+    if (!fs.existsSync(SITEWISE_CSV)) {
+      fs.writeFileSync(SITEWISE_CSV, siteHeaders.join(',') + '\n', 'utf8');
+    }
+
+    // Parse CSV
+    const csvData = fs.readFileSync(SITEWISE_CSV, 'utf8').trim().split('\n');
+    const siteRows = csvData.length > 1 ? csvData.slice(1).map(line => line.split(',')) : [];
+    const headerIndex = Object.fromEntries(siteHeaders.map((h, i) => [h, i]));
+
+    // Find or create site row
+    let siteRow = siteRows.find(r => r[headerIndex['name']] === sitename);
+
+    if (!siteRow) {
+      // Create new site row with default values
+      siteRow = Array(siteHeaders.length).fill('0');
+      siteRow[headerIndex['date']] = today;
+      siteRow[headerIndex['site code']] = siteCode;
+      siteRow[headerIndex['name']] = sitename;
+      siteRow[headerIndex['feedback_ids']] = feedbackId;
+      siteRows.push(siteRow);
+    } else {
+      // Add feedback ID to list if missing
+      const ids = siteRow[headerIndex['feedback_ids']]?.split('|').filter(Boolean) || [];
+      if (!ids.includes(feedbackId)) {
+        ids.push(feedbackId);
+        siteRow[headerIndex['feedback_ids']] = ids.join('|');
+      }
+    }
+
+    // --- Increment counts ---
+    const raisedKey = `${category}_raised`;
+    const solvedKey = `${category}_solved`;
+
+    if (headerIndex[raisedKey] !== undefined) {
+      siteRow[headerIndex[raisedKey]] = String(
+        (parseInt(siteRow[headerIndex[raisedKey]]) || 0) + 1
+      );
+    }
+
+    if (resolved && headerIndex[solvedKey] !== undefined) {
+      siteRow[headerIndex[solvedKey]] = String(
+        (parseInt(siteRow[headerIndex[solvedKey]]) || 0) + 1
+      );
+    }
+
+    // --- Recalculate totals ---
+    const raisedCols = siteHeaders.filter(h => h.endsWith('_raised'));
+    const solvedCols = siteHeaders.filter(h => h.endsWith('_solved'));
+
+    const totalRaised = raisedCols.reduce(
+      (sum, key) => sum + (parseInt(siteRow[headerIndex[key]]) || 0),
+      0
+    );
+    const totalSolved = solvedCols.reduce(
+      (sum, key) => sum + (parseInt(siteRow[headerIndex[key]]) || 0),
+      0
+    );
+
+    siteRow[headerIndex['total_raised']] = totalRaised.toString();
+    siteRow[headerIndex['total_solved']] = totalSolved.toString();
+    siteRow[headerIndex['total_pending']] = (totalRaised - totalSolved).toString();
+
+    // --- Write updated CSV back ---
+    const updatedCsv = [siteHeaders.join(',')]
+      .concat(siteRows.map(r => r.join(',')))
+      .join('\n')
+      .trim() + '\n';
+
+    fs.writeFileSync(SITEWISE_CSV, updatedCsv, 'utf8');
+    console.log('✅ Sitewise CSV updated successfully.');
+
+    // --- Send confirmation ---
+    await sendText(from, '🙏 Thank you! Your feedback has been saved successfully.');
+
+    delete userStates[from];
+  } catch (err) {
+    console.error('❌ saveFeedback error:', err);
+    await sendText(from, '⚠️ Error saving feedback. Please try again later.');
   }
+}
+
+
+
+
+
+
 };
 
 // -------------------- Main Webhook --------------------
 exports.receiveWhatsAppMessage = async (req, res) => {
   try {
+    console.log('📩 Incoming Payload:', JSON.stringify(req.body, null, 2));
     res.sendStatus(200);
+
     const entry = req.body?.entry?.[0]?.changes?.[0]?.value;
     const msgObj = entry?.messages?.[0];
     if (!msgObj) return;
@@ -244,6 +410,11 @@ exports.receiveWhatsAppMessage = async (req, res) => {
 
     if (msgType === 'interactive' && msgObj.interactive?.type === 'list_reply') {
       text = msgObj.interactive.list_reply.id;
+    }
+
+    if (!msgId) {
+      console.log('⚠️ Missing msgId — skipping.');
+      return;
     }
 
     if (processedMessages.has(msgId)) return;
