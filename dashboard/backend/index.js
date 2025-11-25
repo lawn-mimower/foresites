@@ -5,7 +5,8 @@ const bodyparser=require('body-parser');
 const session=require('express-session');
 const path=require('path');
 const cors=require('cors');
-const MONGOURL=process.env.MONGOURL;
+
+
 const PORT=9999;
 
 
@@ -19,11 +20,13 @@ const dashboardRoutes=require('./Routes/fb');
 const { router: authRoutes } = require('./Routes/auth');
 const User = require('./Models/User');
 
+const reportRoutes=require('./Routes/reportRoutes');
 
 
+const MONGOURL='mongodb://abhishekdevelop04_db_user:OCo27RyqFn7wAbLK@ac-v6mdxgy-shard-00-00.lbt0hzv.mongodb.net:27017,ac-v6mdxgy-shard-00-01.lbt0hzv.mongodb.net:27017,ac-v6mdxgy-shard-00-02.lbt0hzv.mongodb.net:27017/?replicaSet=atlas-115nke-shard-0&ssl=true&authSource=admin'
 
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"],
+  origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173","*"],
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
@@ -66,7 +69,7 @@ app.use(session({
 
 app.use('/api/dashboard',dashboardRoutes);
 app.use('/api/auth', authRoutes);
-
+app.use('/api/report',reportRoutes);
 
 app.get('/testpath', (req, res) => {
   res.send(path.join(__dirname, '..', 'uploads'));

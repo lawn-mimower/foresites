@@ -231,3 +231,31 @@
     grid-template-columns: 1fr;
   }
 }
+
+
+
+.analysis-output {
+  font-size: 16px;
+  line-height: 1.6;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #fafafa;
+  border: 1px solid #e6e6e6;
+  margin-top: 10px;
+  white-space: normal;
+}
+
+.analysis-output h3 {
+  margin-top: 12px;
+  color: #444;
+}
+
+.analysis-output strong {
+  color: #202020;
+  font-weight: 600;
+}
+
+.analysis-output em {
+  color: #555;
+  font-style: italic;
+}

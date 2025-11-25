@@ -56,38 +56,34 @@
 
 /* Size variants */
 .logo-small .logo-image {
-  width: 40px;
-  height: 40px;
+  width: 24px;
+  height: 24px;
 }
 
 .logo-small .logo-brand {
-  font-size: 1.1em;
+  font-size: 1em;
 }
 
 .logo-small .logo-subtitle {
-  font-size: 0.7em;
+  font-size: 0.6em;
 }
 
 .logo-medium .logo-image {
-  width: 56px;
-  height: 56px;
-}
-
-.logo-medium .logo-brand {
-  font-size: 1.3em;
+  width: 32px;
+  height: 32px;
 }
 
 .logo-large .logo-image {
-  width: 72px;
-  height: 72px;
+  width: 48px;
+  height: 48px;
 }
 
 .logo-large .logo-brand {
-  font-size: 1.6em;
+  font-size: 1.4em;
 }
 
 .logo-large .logo-subtitle {
-  font-size: 0.9em;
+  font-size: 0.8em;
 }
 
 /* Dark theme support */

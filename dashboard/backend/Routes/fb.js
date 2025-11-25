@@ -6,11 +6,14 @@ const path = require('path');
 const fs = require('fs');
 const { createObjectCsvWriter } = require('csv-writer');
 const { REPORTS_DIR, DAYWISE_CSV, SITEWISE_CSV } = require('../../../config/paths');
+const { getSignedUrlForS3Object, isS3Key } = require('../../../chatbot/s3');
 
 const UserFeedback = require('../Models/userfb');
 const Passphrase=require('../Models/passpharse')
 const Site = require('../Models/sitename');
 const { authenticateToken, requireAdmin } = require('./auth');
+
+const AWS_API_URL = "https://w3cabs3fz0.execute-api.eu-north-1.amazonaws.com/default/issuesDynamicQuery";
 
 
 
@@ -199,6 +202,46 @@ Router.get('/stats', async (req, res) => {
   }
 });
 
+// ✅ Generate signed URL for S3 object or return local path
+Router.get('/media-url', async (req, res) => {
+  try {
+    const { path: filePath } = req.query;
+    if (!filePath) {
+      return res.status(400).json({ error: 'Path parameter is required' });
+    }
+
+    console.log(`🔍 Media URL request for: ${filePath}`);
+
+    // Check if it's an S3 key
+    if (isS3Key(filePath)) {
+      const bucketName = process.env.S3_BUCKET_NAME;
+      if (!bucketName) {
+        console.warn('⚠️ S3_BUCKET_NAME not configured');
+        return res.status(500).json({ error: 'S3 bucket not configured' });
+      }
+      
+      try {
+        console.log(`📤 Generating signed URL for S3 key: ${filePath} in bucket: ${bucketName}`);
+        const signedUrl = await getSignedUrlForS3Object(filePath, bucketName);
+        console.log(`✅ Generated signed URL for: ${filePath}`);
+        return res.json({ url: signedUrl });
+      } catch (s3Error) {
+        console.error('❌ Error generating signed URL:', s3Error);
+        return res.status(500).json({ error: 'Failed to generate signed URL', details: s3Error.message });
+      }
+    } else {
+      // It's a local path, return the local URL
+      console.log(`📁 Returning local path for: ${filePath}`);
+      const baseUrl = process.env.BASE_URL || 'http://localhost:9999';
+      const cleanPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
+      return res.json({ url: `${baseUrl}${cleanPath}` });
+    }
+  } catch (err) {
+    console.error('❌ Error getting media URL:', err);
+    res.status(500).json({ error: 'Failed to get media URL', details: err.message });
+  }
+});
+
 
 // Sites list
 Router.get('/sites', async (req,res)=>{
@@ -305,7 +348,34 @@ Router.delete('/passphrases/:id', requireAdmin, async (req,res)=>{
   }
 });
 
+Router.post("/ask", async (req, res) => {
+  try {
+    const { task } = req.body;
 
+    const payload = {
+      task,
+      bucket: "mdconstructions",
+      key: "MD-report-data-Daywise.csv",
+    };
+
+    const awsRes = await fetch(AWS_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const raw = await awsRes.json();  // raw = { response: "..." }
+
+    // ✔ No JSON.parse needed
+    return res.json({
+      response: raw.response || "No response returned from Lambda",
+    });
+
+  } catch (err) {
+    console.error("Backend route error:", err);
+    return res.status(500).json({ error: "Server error" });
+  }
+});
 
 
 

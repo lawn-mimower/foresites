@@ -27,20 +27,59 @@ export function Home() {
 
     fetchStats();
   }, [apiCall]);
+  function beautifyResponse(text) {
+    if (!text) return "";
+  
+    // Replace underscores such as safety_compliance → Safety Compliance
+    text = text.replace(/([a-z])_([a-z])/gi, (m, a, b) => a + " " + b.toUpperCase());
+  
+    // Bold bullet points: "*  something" to "• Something"
+    text = text.replace(/\*\s+/g, "• ");
+  
+    // Convert markdown-style bold **text**
+    text = text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+  
+    // Convert headings like *Title:* → <h3>Title</h3>
+    text = text.replace(/\*(.*?)\*:/g, "<h3>$1</h3>");
+  
+    // Italic markdown *text*
+    text = text.replace(/\*(.*?)\*/g, "<em>$1</em>");
+  
+    // Replace new lines with <br>
+    text = text.replace(/\n+/g, "<br/>");
+  
+    return text;
+  }
+  
 
-  const handleAsk = () => {
-    const lowerQuery = query.trim().toLowerCase();
-    if (!lowerQuery) return setAnswer("");
-    if (lowerQuery.includes("pending")) {
-      setAnswer(`You currently have ${stats.pending} pending feedbacks.`);
-    } else if (lowerQuery.includes("resolved")) {
-      setAnswer(`${stats.resolved} feedbacks have been resolved successfully`);
-    } else if (lowerQuery.includes("total")) {
-      setAnswer(`Total feedbacks recorded: ${stats.total}`);
-    } else {
-      setAnswer("Try keywords like: total, resolved, pending.");
+  const handleAsk = async () => {
+    const userQuery = query.trim();
+    if (!userQuery) return setAnswer("");
+  
+    setAnswer("Processing...");
+  
+    try {
+      const token = localStorage.getItem("authToken");
+  
+      const response = await fetch("http://localhost:9999/api/dashboard/ask", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,   // 🔥 REQUIRED
+        },
+        body: JSON.stringify({ task: userQuery }),
+      });
+  
+      const data = await response.json();
+  
+      setAnswer(beautifyResponse(data.response || data.error || "No response."));
+
+    } catch (error) {
+      console.error("Query error:", error);
+      setAnswer("Something went wrong.");
     }
   };
+  
 
   return (
     <div className="home-wrapper">
@@ -112,7 +151,7 @@ export function Home() {
             />
             <button onClick={handleAsk}>Ask</button>
           </div>
-          {answer && <div className="query-result">{answer}</div>}
+          {answer && <div className="query-result" dangerouslySetInnerHTML={{ __html: answer }}></div>}
         </div>
 
         <div className="highlight-panel">

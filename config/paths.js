@@ -6,4 +6,5 @@ module.exports = {
   REPORTS_DIR,
   DAYWISE_CSV: path.join(REPORTS_DIR, 'MD-report-data-Daywise.csv'),
   SITEWISE_CSV: path.join(REPORTS_DIR, 'MD-report-data-Sitewise.csv'),
+  USERWISE_CSV: path.join(REPORTS_DIR, 'MD-report-data-Userwise.csv'),
 };

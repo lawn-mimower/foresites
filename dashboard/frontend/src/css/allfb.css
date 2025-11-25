@@ -294,3 +294,44 @@
   text-decoration: underline;
   font-weight: 500;
 }
+
+/* Voice Player Styles */
+.voice-player {
+  margin: 12px 0;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+}
+
+.voice-player audio {
+  width: 100%;
+  margin-top: 8px;
+}
+
+/* Transcription Styles */
+.transcription-section {
+  margin: 12px 0;
+  padding: 12px;
+  background: #f0f9ff;
+  border-radius: 8px;
+  border-left: 4px solid #2563eb;
+}
+
+.transcription-section p {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+  color: #1e40af;
+}
+
+.transcription-text {
+  background: white;
+  padding: 12px;
+  border-radius: 6px;
+  color: #374151;
+  line-height: 1.6;
+  font-size: 0.95rem;
+  border: 1px solid #dbeafe;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}

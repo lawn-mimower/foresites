@@ -4,7 +4,8 @@ const feedbackSchema = new mongoose.Schema({
   name: String,
   sitename: String,
   code: String,
-  feedback: String,
+  
+  // Category chosen by user
   category: {
     type: String,
     enum: [
@@ -15,9 +16,16 @@ const feedbackSchema = new mongoose.Schema({
       "miscellaneous"
     ]
   },
-  solution: String,
-  image: [String],
-  suggestions: String,
+
+  // Feedback can be text or voice
+  feedback_type: { type: String, enum: ['text', 'voice'], default: 'text' },
+  feedback: String,             // text feedback
+  voice_url: String,
+  transcription: String,        // transcription of voice feedback
+
+  solution: String,             // user's suggested solution if any
+  image: [String],             
+  suggestions: String,          // optional future field
   createdAt: { type: Date, default: Date.now },
   resolved: { type: Boolean, default: false },
   resolvedAt: { type: Date, default: null } 

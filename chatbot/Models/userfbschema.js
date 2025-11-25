@@ -21,7 +21,8 @@ const feedbackSchema = new mongoose.Schema({
   // Feedback can be text or voice
   feedback_type: { type: String, enum: ['text', 'voice'], default: 'text' },
   feedback: String,             // text feedback
-  voice_url: String,            
+  voice_url: String,
+  transcription: String,        // transcription of voice feedback
 
   solution: String,             // user's suggested solution if any
   image: [String],             

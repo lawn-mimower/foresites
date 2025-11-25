@@ -21,8 +21,9 @@ async function uploadToS3(localFilePath, bucketName, keyPrefix = "") {
 
     // Determine content type based on file extension
     const ext = path.extname(fileName).toLowerCase();
-    let contentType = 'image/jpeg'; // default
+    let contentType = 'application/octet-stream'; // default
     
+    // Image types
     switch (ext) {
       case '.png':
         contentType = 'image/png';
@@ -37,6 +38,22 @@ async function uploadToS3(localFilePath, bucketName, keyPrefix = "") {
       case '.jpeg':
         contentType = 'image/jpeg';
         break;
+      // Audio types
+      case '.wav':
+        contentType = 'audio/wav';
+        break;
+      case '.ogg':
+        contentType = 'audio/ogg';
+        break;
+      case '.mp3':
+        contentType = 'audio/mpeg';
+        break;
+      case '.m4a':
+        contentType = 'audio/mp4';
+        break;
+      case '.aac':
+        contentType = 'audio/aac';
+        break;
     }
 
     const command = new PutObjectCommand({
@@ -49,15 +66,8 @@ async function uploadToS3(localFilePath, bucketName, keyPrefix = "") {
     await s3.send(command);
     console.log(`✅ Successfully uploaded to S3: ${key}`);
 
-    // Generate signed URL for secure access (valid for 7 days)
-    const getCommand = new GetObjectCommand({
-      Bucket: bucketName,
-      Key: key,
-    });
-    
-    const signedUrl = await getSignedUrl(s3, getCommand, { expiresIn: 604800 }); // 7 days
-    console.log(`🔗 Signed URL generated: ${signedUrl}`);
-    return signedUrl;
+    // Return the S3 key instead of signed URL (we'll generate signed URLs on-demand)
+    return key;
     
   } catch (error) {
     console.error('❌ S3 upload error:', error);
@@ -66,14 +76,14 @@ async function uploadToS3(localFilePath, bucketName, keyPrefix = "") {
 }
 
 // Function to generate signed URL for existing S3 objects
-async function getSignedUrlForImage(s3Key, bucketName = process.env.S3_BUCKET_NAME) {
+async function getSignedUrlForS3Object(s3Key, bucketName = process.env.S3_BUCKET_NAME, expiresIn = 604800) {
   try {
     const getCommand = new GetObjectCommand({
       Bucket: bucketName,
       Key: s3Key,
     });
     
-    const signedUrl = await getSignedUrl(s3, getCommand, { expiresIn: 604800 }); // 7 days
+    const signedUrl = await getSignedUrl(s3, getCommand, { expiresIn }); // Default 7 days
     return signedUrl;
   } catch (error) {
     console.error('❌ Error generating signed URL:', error);
@@ -81,4 +91,9 @@ async function getSignedUrlForImage(s3Key, bucketName = process.env.S3_BUCKET_NA
   }
 }
 
-module.exports = { uploadToS3, getSignedUrlForImage };
+// Helper function to check if a string is an S3 key (starts with voice/ or images/)
+function isS3Key(path) {
+  return path && (path.startsWith('voice/') || path.startsWith('images/'));
+}
+
+module.exports = { uploadToS3, getSignedUrlForS3Object, isS3Key };

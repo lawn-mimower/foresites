@@ -38,51 +38,75 @@ export function MeetingZone() {
       const imgMap = {};
       const voiceMap = {};
 
-      feedbackData.forEach((fb) => {
+      // Helper function to get media URL (S3 or local)
+      const getMediaUrl = async (filePath) => {
+        if (!filePath) return null;
+        
+        // If already a full URL, return it
+        if (filePath.startsWith("http")) {
+          return filePath;
+        }
+
+        // Check if it's an S3 key (starts with voice/ or images/)
+        if (filePath.startsWith("voice/") || filePath.startsWith("images/")) {
+          try {
+            console.log(`🔍 Fetching S3 URL for: ${filePath}`);
+            const response = await apiCall(`${API}/media-url?path=${encodeURIComponent(filePath)}`);
+            if (response && !response.error) {
+              const data = await response.json();
+              console.log(`✅ Got S3 URL for: ${filePath}`);
+              return data.url;
+            } else {
+              console.warn(`⚠️ Failed to get S3 URL for: ${filePath}`, response?.error);
+            }
+          } catch (err) {
+            console.error("❌ Error fetching S3 URL:", err);
+          }
+        }
+
+        // Fallback to local path
+        if (!filePath.startsWith("/uploads/")) {
+          if (filePath.startsWith("uploads/")) {
+            filePath = "/" + filePath;
+          } else if (filePath.startsWith("images/")) {
+            filePath = `/uploads/${filePath}`;
+          } else if (filePath.startsWith("voice/")) {
+            filePath = `/uploads/${filePath}`;
+          } else {
+            // Try to determine folder from path
+            const ext = filePath.split('.').pop()?.toLowerCase();
+            const folder = ['ogg', 'wav', 'mp3', 'm4a'].includes(ext) ? 'voice' : 'images';
+            filePath = `/uploads/${folder}/${filePath}`;
+          }
+        }
+        return `${BASE_URL}${filePath}`;
+      };
+
+      // Process images and voice files
+      for (const fb of feedbackData) {
         // 🖼️ Handle images
         if (fb.image && fb.image.length > 0) {
-          fb.image.forEach((img, i) => {
-            let finalPath = img?.trim();
-            if (!finalPath) return;
-
-            if (!finalPath.startsWith("http")) {
-              if (!finalPath.startsWith("/uploads/")) {
-                if (finalPath.startsWith("uploads/")) {
-                  finalPath = "/" + finalPath;
-                } else if (finalPath.startsWith("images/")) {
-                  finalPath = `/uploads/${finalPath}`;
-                } else {
-                  finalPath = `/uploads/images/${finalPath}`;
-                }
-              }
-              finalPath = `${BASE_URL}${finalPath}`;
+          for (let i = 0; i < fb.image.length; i++) {
+            const img = fb.image[i]?.trim();
+            if (!img) continue;
+            const url = await getMediaUrl(img);
+            if (url) {
+              imgMap[`${fb._id}_${i}`] = url;
             }
-
-            imgMap[`${fb._id}_${i}`] = finalPath;
-          });
-        }
-
-        // 🎧 Handle voice feedback
-        if (fb.voice_url) {
-          let voicePath = fb.voice_url?.trim();
-          if (!voicePath) return;
-
-          if (!voicePath.startsWith("http")) {
-            if (!voicePath.startsWith("/uploads/")) {
-              if (voicePath.startsWith("uploads/")) {
-                voicePath = "/" + voicePath;
-              } else if (voicePath.startsWith("voice/")) {
-                voicePath = `/uploads/${voicePath}`;
-              } else {
-                voicePath = `/uploads/voice/${voicePath}`;
-              }
-            }
-            voicePath = `${BASE_URL}${voicePath}`;
           }
-
-          voiceMap[fb._id] = voicePath;
         }
-      });
+
+        // 🎧 Handle voice files
+        if (fb.voice_url) {
+          const voicePath = fb.voice_url?.trim();
+          if (voicePath) {
+            const url = await getMediaUrl(voicePath);
+            if (url) {
+              voiceMap[fb._id] = url;
+            }
+          }
+        }
+      }
 
       setImageUrls(imgMap);
       setVoiceUrls(voiceMap);
@@ -293,6 +317,14 @@ export function MeetingZone() {
                       <strong>Voice Message:</strong>
                     </p>
                     <audio controls preload="none" src={voiceUrls[fb._id]} />
+                  </div>
+                )}
+
+                {/* 📝 Transcription */}
+                {fb.transcription && (
+                  <div className="transcription-section">
+                    <p><strong>Transcription:</strong></p>
+                    <div className="transcription-text">{fb.transcription}</div>
                   </div>
                 )}
 

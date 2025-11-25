@@ -5,6 +5,7 @@ const fsPromises = require('fs').promises;
 const path = require('path');
 const dotenv = require('dotenv');
 const { createObjectCsvWriter } = require('csv-writer');
+const { uploadToS3 } = require('./s3');
 
 // Models
 const Feedback = require('../chatbot/Models/userfbschema');
@@ -25,6 +26,67 @@ const userStates = {};
 const processedMessages = new Set();
 
 // -------------------- Helper Functions --------------------
+// 🎤 TRANSCRIBE VOICE AUDIO
+async function getTranscription(audioFilePath) {
+  try {
+    // Read the audio file from disk
+    // audioFilePath can be either S3 key (voice/filename.ogg) or local path (/uploads/voice/filename.ogg)
+    console.log(`📝 Reading audio file for transcription: ${audioFilePath}...`);
+    
+    let audioFile;
+    // Check if it's an S3 key (starts with voice/ or images/) or local path
+    if (audioFilePath.startsWith('voice/') || audioFilePath.startsWith('images/')) {
+      // It's an S3 key, read from local uploads folder (file was saved locally before S3 upload)
+      const localPath = path.join(__dirname, '../uploads', audioFilePath);
+      audioFile = fs.readFileSync(localPath);
+    } else {
+      // It's a local path, resolve from project root
+      const cleanPath = audioFilePath.startsWith('/') ? audioFilePath.substring(1) : audioFilePath;
+      audioFile = fs.readFileSync(path.resolve(__dirname, '..', cleanPath));
+    }
+
+    // Convert the file buffer to a Base64 string
+    const audioBase64 = audioFile.toString('base64');
+    console.log('✅ File converted to Base64.');
+
+    // Determine MIME type based on file extension
+    const ext = path.extname(audioFilePath).toLowerCase();
+    const mimeTypes = {
+      '.wav': 'audio/wav',
+      '.ogg': 'audio/ogg',
+      '.mp3': 'audio/mpeg',
+      '.m4a': 'audio/mp4',
+    };
+    const mimeType = mimeTypes[ext] || 'audio/wav';
+
+    // Create the JSON payload
+    const payload = {
+      mime_type: mimeType,
+      audio_base64: audioBase64,
+    };
+
+    // API endpoint from voice_test.js
+    const API_ENDPOINT_URL = 'https://u91h1twf00.execute-api.eu-north-1.amazonaws.com/default/IssueTranscribe';
+
+    // Send the POST request to the API Gateway
+    console.log(`📤 Sending transcription request to API...`);
+    const response = await axios.post(API_ENDPOINT_URL, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      timeout: 60000, // 60 seconds
+    });
+
+    // Extract transcription from response
+    const transcription = response.data?.transcription || '';
+    console.log('✅ Transcription received:', transcription.substring(0, 50) + '...');
+    return transcription;
+  } catch (error) {
+    console.error('❌ Transcription error:', error.response?.data || error.message);
+    return null; // Return null on error so the flow can continue
+  }
+}
+
 async function sendText(to, body) {
   try {
     await axios.post(
@@ -68,7 +130,7 @@ async function sendList(to, header, body, options = []) {
   }
 }
 
-// 📥 DOWNLOAD MEDIA (voice/image) AND SAVE LOCALLY
+// 📥 DOWNLOAD MEDIA (voice/image), SAVE LOCALLY, AND UPLOAD TO S3
 async function downloadMedia(mediaId, folderName, userName = 'anonymous') {
   try {
     const metaRes = await axios.get(
@@ -94,10 +156,27 @@ async function downloadMedia(mediaId, folderName, userName = 'anonymous') {
     const filename = `${dateStr}_${safeName}.${ext}`;
     const filePath = path.join(dir, filename);
 
+    // Save locally first (needed for transcription)
     await fsPromises.writeFile(filePath, mediaRes.data);
-    console.log(`✅ Saved ${folderName}: ${filePath}`);
+    console.log(`✅ Saved ${folderName} locally: ${filePath}`);
 
-    return `/uploads/${folderName}/${filename}`;
+    // Upload to S3
+    const bucketName = process.env.S3_BUCKET_NAME;
+    if (bucketName) {
+      try {
+        const s3Key = await uploadToS3(filePath, bucketName, `${folderName}/`);
+        console.log(`✅ Uploaded to S3: ${s3Key}`);
+        // Return S3 key instead of local path
+        return s3Key;
+      } catch (s3Error) {
+        console.error('❌ S3 upload error, using local path:', s3Error.message);
+        // Fallback to local path if S3 upload fails
+        return `/uploads/${folderName}/${filename}`;
+      }
+    } else {
+      console.warn('⚠️ S3_BUCKET_NAME not set, using local storage');
+      return `/uploads/${folderName}/${filename}`;
+    }
   } catch (err) {
     console.error('❌ downloadMedia error:', err.response?.data || err.message);
     return null;
@@ -175,7 +254,25 @@ const steps = {
     if (!mediaId) return sendText(from, '⚠️ No audio found. Please resend.');
 
     const localPath = await downloadMedia(mediaId, 'voice', user.feedback.name || 'user');
+    if (!localPath) {
+      return sendText(from, '⚠️ Error downloading voice file. Please try again.');
+    }
+
     user.feedback.voice_url = localPath;
+    
+    // Transcribe the voice message
+    console.log('🎤 Starting transcription process...');
+    await sendText(from, '🔄 Processing your voice message...');
+    const transcription = await getTranscription(localPath);
+    
+    if (transcription) {
+      user.feedback.transcription = transcription;
+      console.log('✅ Transcription stored:', transcription.substring(0, 100));
+    } else {
+      console.warn('⚠️ Transcription failed, but continuing with voice file.');
+      // Continue even if transcription fails
+    }
+
     user.step = 'askImage';
     await sendList(from, 'Upload Image', 'Would you like to attach an image?', [
       { id: 'yes', title: 'Yes' },
@@ -314,8 +411,10 @@ saveFeedback: async (from, user) => {
     const siteRows = csvData.length > 1 ? csvData.slice(1).map(line => line.split(',')) : [];
     const headerIndex = Object.fromEntries(siteHeaders.map((h, i) => [h, i]));
 
-    // Find or create site row
-    let siteRow = siteRows.find(r => r[headerIndex['name']] === sitename);
+    // Find or create site row (match by both date AND site name)
+    let siteRow = siteRows.find(r => 
+      r[headerIndex['date']] === today && r[headerIndex['name']] === sitename
+    );
 
     if (!siteRow) {
       // Create new site row with default values

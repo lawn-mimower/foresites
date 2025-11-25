@@ -1,10 +1,74 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const path = require('path');
 const User = require('../Models/User');
+const { REPORTS_DIR, USERWISE_CSV } = require('../../../config/paths');
 const router = express.Router();
 
 // JWT Secret (in production, use environment variable)
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production';
+
+// Ensure reports directory exists
+if (!fs.existsSync(REPORTS_DIR)) {
+  fs.mkdirSync(REPORTS_DIR, { recursive: true });
+}
+
+// 📊 Update User CSV (date, username, login_count, time_spent)
+async function updateUserCSV(username, loginCount = 0, timeSpent = 0) {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const userHeaders = ['date', 'username', 'login_count', 'time_spent'];
+
+    // Ensure CSV file exists with headers
+    if (!fs.existsSync(USERWISE_CSV)) {
+      fs.writeFileSync(USERWISE_CSV, userHeaders.join(',') + '\n', 'utf8');
+    }
+
+    // Parse CSV
+    const csvData = fs.readFileSync(USERWISE_CSV, 'utf8').trim().split('\n');
+    const userRows = csvData.length > 1 ? csvData.slice(1).map(line => line.split(',')) : [];
+    const headerIndex = Object.fromEntries(userHeaders.map((h, i) => [h, i]));
+
+    // Find or create user row for today
+    let userRow = userRows.find(r => 
+      r[headerIndex['date']] === today && r[headerIndex['username']] === username
+    );
+
+    if (!userRow) {
+      // Create new user row for today
+      userRow = Array(userHeaders.length).fill('0');
+      userRow[headerIndex['date']] = today;
+      userRow[headerIndex['username']] = username;
+      userRow[headerIndex['login_count']] = loginCount.toString();
+      userRow[headerIndex['time_spent']] = timeSpent.toString();
+      userRows.push(userRow);
+    } else {
+      // Update existing row
+      if (loginCount > 0) {
+        userRow[headerIndex['login_count']] = String(
+          (parseInt(userRow[headerIndex['login_count']]) || 0) + loginCount
+        );
+      }
+      if (timeSpent > 0) {
+        userRow[headerIndex['time_spent']] = String(
+          (parseInt(userRow[headerIndex['time_spent']]) || 0) + timeSpent
+        );
+      }
+    }
+
+    // Write updated CSV back
+    const updatedCsv = [userHeaders.join(',')]
+      .concat(userRows.map(r => r.join(',')))
+      .join('\n')
+      .trim() + '\n';
+
+    fs.writeFileSync(USERWISE_CSV, updatedCsv, 'utf8');
+    console.log(`✅ Userwise CSV updated for ${username} on ${today}`);
+  } catch (err) {
+    console.error('❌ Error updating user CSV:', err);
+  }
+}
 
 // Middleware to verify JWT token
 const authenticateToken = (req, res, next) => {
@@ -115,6 +179,9 @@ router.post('/login', async (req, res) => {
     const userAgent = req.get('User-Agent');
     await user.addLoginRecord(ipAddress, userAgent);
 
+    // Update user CSV (increment login_count by 1)
+    await updateUserCSV(user.username, 1, 0);
+
     // Generate JWT token
     const token = jwt.sign(
       {
@@ -139,8 +206,30 @@ router.post('/login', async (req, res) => {
 });
 
 // Logout (client-side token removal)
-router.post('/logout', authenticateToken, (req, res) => {
-  res.json({ message: 'Logout successful' });
+router.post('/logout', authenticateToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (user) {
+      // Add logout record and calculate session duration
+      await user.addLogoutRecord();
+      
+      // Get session duration from the most recent login record
+      let timeSpent = 0;
+      if (user.loginHistory && user.loginHistory.length > 0) {
+        timeSpent = user.loginHistory[0].sessionDuration || 0;
+      }
+      
+      // Update user CSV (add time_spent in minutes)
+      if (timeSpent > 0) {
+        await updateUserCSV(user.username, 0, timeSpent);
+      }
+    }
+    
+    res.json({ message: 'Logout successful' });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.json({ message: 'Logout successful' }); // Still return success even if CSV update fails
+  }
 });
 
 // Get current user profile

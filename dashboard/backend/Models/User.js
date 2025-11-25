@@ -36,13 +36,25 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  sessionStartTime: {
+    type: Date,
+    default: null
+  },
   loginHistory: [{
     loginTime: {
       type: Date,
       default: Date.now
     },
     ipAddress: String,
-    userAgent: String
+    userAgent: String,
+    logoutTime: {
+      type: Date,
+      default: null
+    },
+    sessionDuration: {
+      type: Number, // in minutes
+      default: 0
+    }
   }],
   profile: {
     firstName: String,
@@ -87,10 +99,13 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 // Add login record
 userSchema.methods.addLoginRecord = function(ipAddress, userAgent) {
   this.lastLogin = Date.now();
+  this.sessionStartTime = Date.now();
   this.loginHistory.unshift({
     loginTime: Date.now(),
     ipAddress,
-    userAgent
+    userAgent,
+    logoutTime: null,
+    sessionDuration: 0
   });
   
   // Keep only last 10 login records
@@ -98,6 +113,19 @@ userSchema.methods.addLoginRecord = function(ipAddress, userAgent) {
     this.loginHistory = this.loginHistory.slice(0, 10);
   }
   
+  return this.save();
+};
+
+// Add logout record and calculate session duration
+userSchema.methods.addLogoutRecord = function() {
+  if (this.sessionStartTime && this.loginHistory.length > 0) {
+    const sessionDuration = Math.round((Date.now() - this.sessionStartTime) / 60000); // in minutes
+    if (this.loginHistory[0]) {
+      this.loginHistory[0].logoutTime = Date.now();
+      this.loginHistory[0].sessionDuration = sessionDuration;
+    }
+    this.sessionStartTime = null;
+  }
   return this.save();
 };
 
