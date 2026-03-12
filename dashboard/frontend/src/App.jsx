@@ -4,7 +4,8 @@ import './css/App.css';
 import{Navbar} from'./Navbar'
 import {Footer} from './Footer'
 import {Home} from './home';
-import{MeetingZone}from './meetingzone';
+import{AssignedJobs}from './AssignedJobs';
+import{AssignSnags}from './AssignSnags';
 import {Sitewisefb} from'./sites';
 import{AllFeedbacks} from './showfb';
 import {Addform} from './add-form'
@@ -38,7 +39,7 @@ function App() {
             } />
             <Route path="/meetingzone" element={
               <ProtectedRoute requireAuth={true}>
-                <MeetingZone />
+                <AssignedJobs />
               </ProtectedRoute>
             } />
             <Route path="/showsites" element={
@@ -49,6 +50,11 @@ function App() {
             <Route path="/add-form" element={
               <ProtectedRoute requireAuth={true} requireAdmin={true}>
                 <Addform/>
+              </ProtectedRoute>
+            }/>
+            <Route path="/assign-snags" element={
+              <ProtectedRoute requireAuth={true} requireAdmin={true}>
+                <AssignSnags/>
               </ProtectedRoute>
             }/>
             <Route path='/login' element={<Login/>}></Route>

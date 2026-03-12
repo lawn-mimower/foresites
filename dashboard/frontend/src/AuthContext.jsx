@@ -81,6 +81,10 @@ export const AuthProvider = ({ children }) => {
       const data = await response.json();
 
       if (response.ok) {
+        console.log('✅ Login response:', data);
+        console.log('📌 User data received:', data.user);
+        console.log('📌 Site ID:', data.user.site_id);
+        
         localStorage.setItem('authToken', data.token);
         localStorage.setItem('userData', JSON.stringify(data.user));
         setToken(data.token);

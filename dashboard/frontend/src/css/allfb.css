@@ -335,3 +335,163 @@
   white-space: pre-wrap;
   word-wrap: break-word;
 }
+
+/* ✅ Assignment Section Styles */
+.assignment-section {
+  margin-top: 16px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f0f4ff 0%, #f9f0ff 100%);
+  border-radius: 12px;
+  border: 2px solid #e0c3ff;
+}
+
+.assignment-section h4 {
+  margin: 0 0 12px 0;
+  color: #5b21b6;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.assigned-to {
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  border-left: 4px solid #8b5cf6;
+}
+
+.assigned-to p {
+  margin: 0 0 8px 0;
+  font-weight: 600;
+  color: #5b21b6;
+  font-size: 0.9rem;
+}
+
+.assigned-to ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.assigned-to li {
+  padding: 8px;
+  background: #faf5ff;
+  margin-bottom: 6px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: #4b5563;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-tag {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.status-tag.resolved {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.status-tag.open {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.assignment-desc {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid #e5d4ff;
+  color: #6b5b95;
+  font-size: 0.85rem;
+}
+
+.assign-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.assign-form select,
+.assign-form textarea {
+  padding: 10px;
+  border: 1px solid #d4af37;
+  border-radius: 6px;
+  background: white;
+  color: #1f2937;
+  font-family: inherit;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.assign-form select:focus,
+.assign-form textarea:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.assign-form textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.assign-form textarea::placeholder {
+  color: #9ca3af;
+}
+
+.assign-btn {
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+
+.assign-btn:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
+}
+
+.assign-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Mark Complete Button */
+.mark-complete,
+.mark-resolve {
+  padding: 10px 18px;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  margin-right: 8px;
+  margin-top: 12px;
+}
+
+.mark-complete:hover,
+.mark-resolve:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
+}
+
+.mark-complete:active,
+.mark-resolve:active {
+  transform: translateY(0);
+}

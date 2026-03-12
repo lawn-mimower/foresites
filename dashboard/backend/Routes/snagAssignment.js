@@ -1,5 +1,6 @@
 const express = require('express');
 const Router = express.Router();
+const { randomUUID } = require('crypto');
 const supabase = require('../config/supabaseClient');
 const { authenticateToken, requireAdmin } = require('./auth');
 
@@ -47,26 +48,31 @@ Router.get('/assignments/user', authenticateToken, async (req, res) => {
 // ✅ Create new assignment
 Router.post('/assignments', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { snag_id, site_id, assigned_user_id } = req.body;
+    const { snag_id, site_id, assigned_user_id, description } = req.body;
 
     if (!snag_id || !site_id || !assigned_user_id) {
       return res.status(400).json({ error: 'Missing required fields: snag_id, site_id, assigned_user_id' });
     }
 
-    // Generate assignment_id
-    const assignment_id = `assign_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Generate assignment_id as UUID
+    const assignment_id = randomUUID();
+
+    const assignmentData = {
+      assignment_id,
+      snag_id,
+      site_id,
+      assigned_user_id,
+      status: 'open'
+    };
+
+    // Add description if provided
+    if (description && description.trim()) {
+      assignmentData.description = description;
+    }
 
     const { data: assignment, error } = await supabase
       .from('snag_assignment')
-      .insert([
-        {
-          assignment_id,
-          snag_id,
-          site_id,
-          assigned_user_id,
-          status: 'open'
-        }
-      ])
+      .insert([assignmentData])
       .select()
       .single();
 
@@ -91,6 +97,17 @@ Router.put('/assignments/:assignmentId', authenticateToken, async (req, res) => 
     const { assignmentId } = req.params;
     const { status, notes } = req.body;
 
+    // First, get the assignment to find the snag_id
+    const { data: assignment, error: fetchError } = await supabase
+      .from('snag_assignment')
+      .select('snag_id')
+      .eq('assignment_id', assignmentId)
+      .single();
+
+    if (fetchError || !assignment) {
+      return res.status(404).json({ error: 'Assignment not found' });
+    }
+
     const updateData = { status };
     if (notes) updateData.notes = notes;
     
@@ -98,6 +115,7 @@ Router.put('/assignments/:assignmentId', authenticateToken, async (req, res) => 
       updateData.resolved_at = new Date().toISOString();
     }
 
+    // Update the assignment
     const { data: updated, error } = await supabase
       .from('snag_assignment')
       .update(updateData)
@@ -107,6 +125,19 @@ Router.put('/assignments/:assignmentId', authenticateToken, async (req, res) => 
 
     if (!updated || error) {
       return res.status(404).json({ error: 'Assignment not found' });
+    }
+
+    // ✅ Also update the main snag table with the same status
+    const snagUpdateData = { status };
+
+    const { error: snagError } = await supabase
+      .from('snag')
+      .update(snagUpdateData)
+      .eq('id', assignment.snag_id);
+
+    if (snagError) {
+      console.warn('⚠️ Warning: Snag update failed', snagError);
+      // Don't fail the request, just warn
     }
 
     res.json({
@@ -199,6 +230,98 @@ Router.delete('/assignments/:assignmentId', authenticateToken, requireAdmin, asy
   } catch (err) {
     console.error('❌ Error deleting assignment:', err);
     res.status(500).json({ error: 'Failed to delete assignment' });
+  }
+});
+
+// ✅ Get user's assigned jobs with snag and site details
+Router.get('/user/assigned-jobs', authenticateToken, async (req, res) => {
+  try {
+    const { data: assignments, error } = await supabase
+      .from('snag_assignment')
+      .select(`
+        assignment_id,
+        snag_id,
+        site_id,
+        assigned_user_id,
+        assigned_at,
+        resolved_at,
+        proof,
+        description,
+        status,
+        snag(id, feedback_type, feedback, transcription, image_url, status),
+        site(id, site_name, site_manager)
+      `)
+      .eq('assigned_user_id', req.user.user_id)
+      .order('assigned_at', { ascending: false });
+
+    if (error) {
+      console.error('❌ Error fetching assigned jobs:', error);
+      return res.status(500).json({ error: 'Failed to fetch assigned jobs' });
+    }
+
+    res.json(assignments);
+  } catch (err) {
+    console.error('❌ Error fetching assigned jobs:', err);
+    res.status(500).json({ error: 'Failed to fetch assigned jobs' });
+  }
+});
+
+// ✅ Get unresolved snags for a specific site (for Sr. Engineer assignment)
+Router.get('/site/:siteId/unresolved-snags', authenticateToken, async (req, res) => {
+  try {
+    const { siteId } = req.params;
+    
+    console.log(`📌 Fetching unresolved snags for site: ${siteId}`);
+    
+    const { data: snags, error } = await supabase
+      .from('snag')
+      .select('*')
+      .eq('site_id', siteId)
+      .neq('status', 'resolved')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('❌ Error fetching snags:', error);
+      return res.status(500).json({ error: 'Failed to fetch snags', details: error.message });
+    }
+
+    console.log(`✅ Found ${snags?.length || 0} unresolved snags for site ${siteId}`);
+    
+    res.json(snags || []);
+  } catch (err) {
+    console.error('❌ Error fetching snags:', err);
+    res.status(500).json({ error: 'Failed to fetch snags', details: err.message });
+  }
+});
+
+// ✅ Get users for a specific site (for Sr. Engineer assignment)
+Router.get('/site/:siteId/users', authenticateToken, async (req, res) => {
+  try {
+    const { siteId } = req.params;
+    
+    console.log(`📌 Fetching users for site: ${siteId}`);
+    
+    const { data: users, error } = await supabase
+      .from('website_user')
+      .select('*')
+      .eq('site_id', siteId);
+
+    if (error) {
+      console.error('❌ Error fetching users:', error);
+      return res.status(500).json({ error: 'Failed to fetch users', details: error.message });
+    }
+
+    // Filter out super admins
+    const filteredUsers = users.filter(u => 
+      u.role !== 'Super admin' && u.role !== 'super_admin'
+    );
+
+    console.log(`✅ Found ${filteredUsers.length} users for site ${siteId}`);
+    
+    res.json(filteredUsers);
+  } catch (err) {
+    console.error('❌ Error fetching users:', err);
+    res.status(500).json({ error: 'Failed to fetch users', details: err.message });
   }
 });
 

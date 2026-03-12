@@ -11,28 +11,153 @@ export function AllFeedbacks() {
   const [editValues, setEditValues] = useState({ feedback: "", suggestion: "" });
   const [loadingReport, setLoadingReport] = useState(false);
   const [reportUrl, setReportUrl] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // ✅ New state for assignments
+  const [siteUsers, setSiteUsers] = useState([]);
+  const [assignmentForm, setAssignmentForm] = useState({});
+  const [assignedUsers, setAssignedUsers] = useState({});
+  const [assigningId, setAssigningId] = useState(null);
 
-  const { apiCall, isAdmin } = useAuth();
-  const API = "http://localhost:9999/api/dashboard";
+  const { apiCall, isAdmin, user } = useAuth();
+  const API = "http://localhost:9999/api";
   const BASE_URL = "http://localhost:9999";
 
-  // 🧠 Fetch feedbacks
-  useEffect(() => {
-    const fetchFeedbacks = async () => {
-      try {
-        const data = await apiCall(`${API}/feedbacks`);
-        if (!data || data.error) return setFeedbacks([]);
+  // 🧠 Fetch feedbacks and site users (for Sr. Engineers)
+  const fetchFeedbacks = async () => {
+    try {
+      setRefreshing(true);
+      console.log("📌 User data:", user);
+      console.log("📌 isAdmin():", isAdmin());
+      console.log("📌 User site_id:", user?.site_id);
+      
+      const data = await apiCall(`${API}/dashboard/feedbacks`);
+      if (!data || data.error) return setFeedbacks([]);
 
-        const feedbacksData = Array.isArray(data) ? data : [];
-        setFeedbacks(feedbacksData);
-      } catch (err) {
-        console.error("Error fetching feedbacks:", err);
-        setFeedbacks([]);
+      const feedbacksData = Array.isArray(data) ? data : [];
+      setFeedbacks(feedbacksData);
+      
+      // Fetch assignments and assigned users for Sr. Engineers/Admins
+      if (isAdmin()) {
+        console.log("✅ User is admin, fetching site users and assignments");
+        fetchSiteUsers();
+        fetchAssignments();
       }
-    };
+      showToast("✅ Data refreshed", "success");
+    } catch (err) {
+      console.error("Error fetching feedbacks:", err);
+      setFeedbacks([]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
+  useEffect(() => {
     fetchFeedbacks();
   }, [apiCall]);
+
+  // ✅ Fetch site users (for Sr. Engineers)
+  const fetchSiteUsers = async () => {
+    try {
+      console.log("📌 Fetching site users for site_id:", user?.site_id);
+      
+      if (!user?.site_id) {
+        console.warn("⚠️ No site_id available for user");
+        setSiteUsers([]);
+        return;
+      }
+      
+      const data = await apiCall(
+        `${API}/snag-assignments/site/${user.site_id}/users`
+      );
+      
+      console.log("📌 Site users response:", data);
+      
+      if (!data || data.error) {
+        setSiteUsers([]);
+        return;
+      }
+      const usersData = Array.isArray(data) ? data : [];
+      console.log(`✅ Loaded ${usersData.length} site users`);
+      setSiteUsers(usersData);
+    } catch (err) {
+      console.error("Error fetching site users:", err);
+      setSiteUsers([]);
+    }
+  };
+
+  // ✅ Fetch existing assignments
+  const fetchAssignments = async () => {
+    try {
+      const data = await apiCall(`${API}/snag-assignments/assignments`);
+      if (!data || data.error) return;
+
+      const assignments = Array.isArray(data) ? data : [];
+      const assignedBySnag = {};
+
+      assignments.forEach((a) => {
+        if (!assignedBySnag[a.snag_id]) {
+          assignedBySnag[a.snag_id] = [];
+        }
+        const assignedUser = siteUsers.find(
+          (u) => u.user_id === a.assigned_user_id
+        );
+        assignedBySnag[a.snag_id].push({
+          username: assignedUser?.username || "Unknown",
+          status: a.status,
+          description: a.description,
+        });
+      });
+
+      setAssignedUsers(assignedBySnag);
+    } catch (err) {
+      console.error("Error fetching assignments:", err);
+    }
+  };
+
+  // ✅ Handle snag assignment
+  const handleAssignSnag = async (snagId) => {
+    const selectedUserId = assignmentForm[`${snagId}_user`];
+    const description = assignmentForm[`${snagId}_desc`];
+
+    if (!selectedUserId) {
+      showToast("⚠️ Please select a team member", "warning");
+      return;
+    }
+
+    setAssigningId(snagId);
+    try {
+      const response = await apiCall(
+        `${API}/snag-assignments/assignments`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            snag_id: snagId,
+            site_id: user.site_id,
+            assigned_user_id: selectedUserId,
+            description: description || "",
+          }),
+        }
+      );
+
+      if (response && !response.error) {
+        showToast("✅ Task assigned successfully!", "success");
+        setAssignmentForm({
+          ...assignmentForm,
+          [`${snagId}_user`]: "",
+          [`${snagId}_desc`]: "",
+        });
+        fetchAssignments();
+      } else {
+        showToast("❌ Failed to assign task", "error");
+      }
+    } catch (err) {
+      console.error("Error assigning snag:", err);
+      showToast("Error assigning task", "error");
+    } finally {
+      setAssigningId(null);
+    }
+  };
 
   // ⏳ Generate Report
   const downloadReport = async () => {
@@ -71,7 +196,7 @@ export function AllFeedbacks() {
   const toggleTodo = async (id, currentStatus) => {
     try {
       const newStatus = currentStatus === 'resolved' ? 'pending' : 'resolved';
-      const response = await apiCall(`${API}/feedbacks/${id}/resolve`, {
+      const response = await apiCall(`${API}/dashboard/feedbacks/${id}/resolve`, {
         method: "PUT",
         body: JSON.stringify({ status: newStatus })
       });
@@ -101,7 +226,7 @@ export function AllFeedbacks() {
 
   const saveEdit = async (id) => {
     try {
-      const response = await apiCall(`${API}/feedbacks/${id}`, {
+      const response = await apiCall(`${API}/dashboard/feedbacks/${id}`, {
         method: "PUT",
         body: JSON.stringify(editValues)
       });
@@ -120,7 +245,7 @@ export function AllFeedbacks() {
 
   const deleteFeedback = async (id) => {
     try {
-      await apiCall(`${API}/feedbacks/${id}`, {
+      await apiCall(`${API}/dashboard/feedbacks/${id}`, {
         method: "DELETE"
       });
       setFeedbacks((prev) => prev.filter((f) => f && f.id !== id));
@@ -161,6 +286,16 @@ export function AllFeedbacks() {
             <option value="resolved">Resolved</option>
             <option value="unresolved">Unresolved</option>
           </select>
+
+          {/* Refresh Button */}
+          <button
+            className="generate-report-btn"
+            onClick={fetchFeedbacks}
+            disabled={refreshing}
+            style={{ background: '#2563eb' }}
+          >
+            {refreshing ? "⏳ Refreshing..." : "🔄 Refresh"}
+          </button>
 
           {/* Generate Report Button */}
           <button
@@ -355,6 +490,88 @@ export function AllFeedbacks() {
                   Delete
                 </button>
               </div>
+
+              {/* ✅ Assignment Section for Sr. Engineers */}
+              {isAdmin() && (
+                <div className="assignment-section">
+                  <h4>📋 Assign Task to Team Member</h4>
+                  
+                  {!user?.site_id && (
+                    <div style={{color: '#ef4444', padding: '8px', background: '#fee2e2', borderRadius: '6px', marginBottom: '8px'}}>
+                      ⚠️ Site information not available for this user
+                    </div>
+                  )}
+                  
+                  {/* Show already assigned users */}
+                  {assignedUsers[fb.id] && assignedUsers[fb.id].length > 0 && (
+                    <div className="assigned-to">
+                      <p><strong>Assigned to:</strong></p>
+                      <ul>
+                        {assignedUsers[fb.id].map((assignment, idx) => (
+                          <li key={idx}>
+                            👤 {assignment.username} 
+                            <span className={`status-tag ${assignment.status}`}>
+                              {assignment.status === 'resolved' ? '✅ Resolved' : '⏳ Open'}
+                            </span>
+                            {assignment.description && (
+                              <div className="assignment-desc">
+                                <small><strong>Note:</strong> {assignment.description}</small>
+                              </div>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {user?.site_id && (
+                    <div className="assign-form">
+                      <select
+                        value={assignmentForm[`${fb.id}_user`] || ""}
+                        onChange={(e) =>
+                          setAssignmentForm({
+                            ...assignmentForm,
+                            [`${fb.id}_user`]: e.target.value,
+                          })
+                        }
+                        disabled={assigningId === fb.id}
+                      >
+                        <option value="">-- Select team member --</option>
+                        {siteUsers.length > 0 ? (
+                          siteUsers.map((u) => (
+                            <option key={u.user_id} value={u.user_id}>
+                              {u.username} ({u.role})
+                            </option>
+                          ))
+                        ) : (
+                          <option value="" disabled>No team members available</option>
+                        )}
+                      </select>
+
+                      <textarea
+                        placeholder="Add description/notes (optional)"
+                        value={assignmentForm[`${fb.id}_desc`] || ""}
+                        onChange={(e) =>
+                          setAssignmentForm({
+                            ...assignmentForm,
+                            [`${fb.id}_desc`]: e.target.value,
+                          })
+                        }
+                        disabled={assigningId === fb.id}
+                        rows="2"
+                      />
+
+                      <button
+                        className="assign-btn"
+                        onClick={() => handleAssignSnag(fb.id)}
+                        disabled={assigningId === fb.id || !assignmentForm[`${fb.id}_user`]}
+                      >
+                        {assigningId === fb.id ? "⏳ Assigning..." : "➕ Assign Task"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         ))}

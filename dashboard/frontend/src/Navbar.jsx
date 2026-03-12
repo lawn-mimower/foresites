@@ -64,7 +64,7 @@ export function Navbar() {
           className={isActive('/meetingzone') ? 'active' : ''}
           onClick={closeMobileMenu}
         >
-          Meeting Zone
+          Assigned Jobs
         </Link>
         <Link 
           to="/showsites" 
@@ -98,6 +98,14 @@ export function Navbar() {
                   onClick={closeMobileMenu}
                 >
                   Admin Panel
+                </Link>
+
+                <Link 
+                  to="/assign-snags" 
+                  className={isActive('/assign-snags') ? 'active' : ''}
+                  onClick={closeMobileMenu}
+                >
+                  Assign Snags
                 </Link>
 
                       <Link 

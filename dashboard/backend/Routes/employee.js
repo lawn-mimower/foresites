@@ -16,10 +16,13 @@ router.post('/', async (req, res) => {
 // Get all employees
 router.get('/', async (req, res) => {
   try {
+    console.log('📌 Fetching all employees...');
     const employees = await Employee.find();
+    console.log(`✅ Found ${employees.length} employees`);
     res.json(employees);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('❌ Error fetching employees:', err);
+    res.status(500).json({ error: err.message || 'Failed to fetch employees' });
   }
 });
 

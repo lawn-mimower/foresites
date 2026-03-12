@@ -93,7 +93,7 @@ Router.put('/feedbacks/:id/resolve', async (req, res) => {
       return res.status(400).json({ error: 'Status is required' });
     }
 
-    // Update in Supabase
+    // Update in Supabase - snag table
     const { data: updated, error } = await supabase
       .from('snag')
       .update({
@@ -111,6 +111,24 @@ Router.put('/feedbacks/:id/resolve', async (req, res) => {
 
     if (!updated) {
       return res.status(404).json({ error: 'Feedback not found' });
+    }
+
+    // ✅ Also update any related assignments for this snag
+    // Map snag status to assignment status (snag uses 'pending', assignment uses 'open')
+    const assignmentStatus = status === 'resolved' ? 'resolved' : 'open';
+    const assignmentUpdateData = { status: assignmentStatus };
+    if (status === 'resolved') {
+      assignmentUpdateData.resolved_at = new Date().toISOString();
+    }
+
+    const { error: assignmentError } = await supabase
+      .from('snag_assignment')
+      .update(assignmentUpdateData)
+      .eq('snag_id', id);
+
+    if (assignmentError) {
+      console.warn('⚠️ Warning: Assignment update failed', assignmentError);
+      // Don't fail the response, just warn
     }
 
     res.json({
