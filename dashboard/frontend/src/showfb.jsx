@@ -8,9 +8,7 @@ export function AllFeedbacks() {
   const [completed, setCompleted] = useState({});
   const [sortBy, setSortBy] = useState("newest");
   const [editingId, setEditingId] = useState(null);
-  const [editValues, setEditValues] = useState({ feedback: "", solution: "" });
-  const [imageUrls, setImageUrls] = useState({});
-  const [voiceUrls, setVoiceUrls] = useState({});
+  const [editValues, setEditValues] = useState({ feedback: "", suggestion: "" });
   const [loadingReport, setLoadingReport] = useState(false);
   const [reportUrl, setReportUrl] = useState(null);
 
@@ -22,72 +20,11 @@ export function AllFeedbacks() {
   useEffect(() => {
     const fetchFeedbacks = async () => {
       try {
-        const response = await apiCall(`${API}/feedbacks`);
-        if (!response || response.error) return setFeedbacks([]);
+        const data = await apiCall(`${API}/feedbacks`);
+        if (!data || data.error) return setFeedbacks([]);
 
-        const data = await response.json();
         const feedbacksData = Array.isArray(data) ? data : [];
         setFeedbacks(feedbacksData);
-
-        const imgMap = {};
-        const voiceMap = {};
-
-        const getMediaUrl = async (filePath) => {
-          if (!filePath) return null;
-
-          if (filePath.startsWith("http")) return filePath;
-
-          // S3 signed URL
-          if (filePath.startsWith("voice/") || filePath.startsWith("images/")) {
-            try {
-              const response = await apiCall(
-                `${API}/media-url?path=${encodeURIComponent(filePath)}`
-              );
-              if (response && !response.error) {
-                const data = await response.json();
-                return data.url;
-              }
-            } catch (err) {
-              console.error("Error fetching media URL:", err);
-            }
-          }
-
-          let fp = filePath;
-          if (!fp.startsWith("/uploads/")) {
-            if (fp.startsWith("uploads/")) fp = "/" + fp;
-            else if (fp.startsWith("images/")) fp = `/uploads/${fp}`;
-            else if (fp.startsWith("voice/")) fp = `/uploads/${fp}`;
-            else {
-              const ext = fp.split(".").pop()?.toLowerCase();
-              const folder = ["ogg", "wav", "mp3", "m4a"].includes(ext)
-                ? "voice"
-                : "images";
-              fp = `/uploads/${folder}/${fp}`;
-            }
-          }
-
-          return `${BASE_URL}${fp}`;
-        };
-
-        // Process images + voice files
-        for (const fb of feedbacksData) {
-          if (fb.image && fb.image.length > 0) {
-            for (let i = 0; i < fb.image.length; i++) {
-              const img = fb.image[i]?.trim();
-              if (!img) continue;
-              const url = await getMediaUrl(img);
-              if (url) imgMap[`${fb._id}_${i}`] = url;
-            }
-          }
-
-          if (fb.voice_url) {
-            const url = await getMediaUrl(fb.voice_url.trim());
-            if (url) voiceMap[fb._id] = url;
-          }
-        }
-
-        setImageUrls(imgMap);
-        setVoiceUrls(voiceMap);
       } catch (err) {
         console.error("Error fetching feedbacks:", err);
         setFeedbacks([]);
@@ -130,22 +67,21 @@ export function AllFeedbacks() {
     }
   };
 
-  // Toggle resolved
-  const toggleTodo = async (id, currentResolved) => {
+  // Toggle status (resolved/pending)
+  const toggleTodo = async (id, currentStatus) => {
     try {
+      const newStatus = currentStatus === 'resolved' ? 'pending' : 'resolved';
       const response = await apiCall(`${API}/feedbacks/${id}/resolve`, {
         method: "PUT",
-        body: JSON.stringify({ resolved: !currentResolved }),
+        body: JSON.stringify({ status: newStatus })
       });
 
-      if (response && !response.error) {
-        const updated = await response.json();
+      if (response && response.updated) {
         setFeedbacks((prev) =>
-          prev.map((f) => (f._id === id ? updated.updated : f))
+          prev.map((f) => (f.id === id ? response.updated : f))
         );
-        setCompleted((prev) => ({ ...prev, [id]: updated.updated.resolved }));
         showToast(
-          updated.updated.resolved
+          newStatus === 'resolved'
             ? "✅ Marked as resolved"
             : "⚠️ Marked as unresolved",
           "success"
@@ -153,26 +89,28 @@ export function AllFeedbacks() {
       }
     } catch (err) {
       console.error("Toggle error:", err);
+      showToast("Failed to update status", "error");
     }
   };
 
   // Edit feedback
   const editFeedback = (fb) => {
-    setEditingId(fb._id);
-    setEditValues({ feedback: fb.feedback || "", solution: fb.solution || "" });
+    setEditingId(fb.id);
+    setEditValues({ feedback: fb.feedback || "", suggestion: fb.suggestion || "" });
   };
 
   const saveEdit = async (id) => {
     try {
       const response = await apiCall(`${API}/feedbacks/${id}`, {
         method: "PUT",
-        body: JSON.stringify(editValues),
+        body: JSON.stringify(editValues)
       });
-      if (response && !response.error) {
-        const updated = await response.json();
-        setFeedbacks((prev) => prev.map((f) => (f._id === id ? updated : f)));
+      if (response && response.id) {
+        setFeedbacks((prev) => prev.map((f) => (f.id === id ? response : f)));
         showToast("Feedback updated", "success");
         setEditingId(null);
+      } else if (response && response.error) {
+        showToast(response.error, "error");
       }
     } catch (err) {
       console.error("Edit error:", err);
@@ -182,13 +120,11 @@ export function AllFeedbacks() {
 
   const deleteFeedback = async (id) => {
     try {
-      const response = await apiCall(`${API}/feedbacks/${id}`, {
-        method: "DELETE",
+      await apiCall(`${API}/feedbacks/${id}`, {
+        method: "DELETE"
       });
-      if (response && !response.error) {
-        setFeedbacks((prev) => prev.filter((f) => f._id !== id));
-        showToast("Deleted", "success");
-      }
+      setFeedbacks((prev) => prev.filter((f) => f && f.id !== id));
+      showToast("Deleted", "success");
     } catch (err) {
       console.error("Delete error:", err);
       showToast("Failed to delete", "error");
@@ -196,17 +132,17 @@ export function AllFeedbacks() {
   };
 
   // Sorting
-  let displayed = [...feedbacks];
-  if (sortBy === "resolved") displayed = displayed.filter((f) => f.resolved);
-  if (sortBy === "unresolved") displayed = displayed.filter((f) => !f.resolved);
+  let displayed = [...feedbacks].filter(f => f); // Remove undefined values
+  if (sortBy === "resolved") displayed = displayed.filter((f) => f && f.status === 'resolved');
+  if (sortBy === "unresolved") displayed = displayed.filter((f) => f && f.status === 'pending');
   displayed.sort((a, b) =>
     sortBy === "oldest"
-      ? new Date(a.createdAt) - new Date(b.createdAt)
-      : new Date(b.createdAt) - new Date(a.createdAt)
+      ? new Date(a.created_at) - new Date(b.created_at)
+      : new Date(b.created_at) - new Date(a.created_at)
   );
 
-  const total = feedbacks.length;
-  const resolved = feedbacks.filter((f) => f.resolved).length;
+  const total = feedbacks.filter(f => f).length;
+  const resolved = feedbacks.filter((f) => f && f.status === 'resolved').length;
   const pending = total - resolved;
 
   return (
@@ -269,8 +205,8 @@ export function AllFeedbacks() {
       <div className="feedback-list">
         {displayed.map((fb) => (
           <div
-            key={fb._id}
-            className={`fb-card ${fb.resolved ? "resolved" : "pending"}`}
+            key={fb.id}
+            className={`fb-card ${fb.status === 'resolved' ? "resolved" : "pending"}`}
           >
             <div className="fb-header-row">
               <h3>
@@ -280,27 +216,39 @@ export function AllFeedbacks() {
                     : "No feedback")}
               </h3>
               <button
-                onClick={() => toggleTodo(fb._id, fb.resolved)}
-                className={`status-btn ${fb.resolved ? "done" : ""}`}
+                onClick={() => toggleTodo(fb.id, fb.status)}
+                className={`status-btn ${fb.status === 'resolved' ? "done" : ""}`}
               >
-                {fb.resolved ? "Resolved" : "Mark Complete"}
+                {fb.status === 'resolved' ? "Resolved" : "Mark Complete"}
               </button>
             </div>
 
             <div className="fb-details">
               <p>
-                <strong>Site:</strong> {fb.sitename} | <strong>By:</strong>{" "}
-                {fb.name} | <strong>Code:</strong> {fb.code}
+                <strong>Site:</strong> {fb.site?.site_name || "—"} | <strong>Reporter:</strong>{" "}
+                {fb.reporter_name || "—"} | <strong>Phone:</strong> {fb.phone_number || "—"}
               </p>
 
               <p>
-                <strong>Category:</strong>{" "}
+                <strong>Type:</strong> {fb.feedback_type || "text"} | <strong>Category:</strong>{" "}
                 <span className={`cat-badge ${fb.category || "no-category"}`}>
                   {fb.category?.replace("_", " ") || "No category"}
                 </span>
               </p>
 
-              {editingId === fb._id ? (
+              {fb.feedback && (
+                <p>
+                  <strong>Feedback:</strong> {fb.feedback}
+                </p>
+              )}
+
+              {fb.suggestion && (
+                <p>
+                  <strong>Suggestion:</strong> {fb.suggestion}
+                </p>
+              )}
+
+              {editingId === fb.id ? (
                 <div className="edit-area">
                   <input
                     value={editValues.feedback}
@@ -313,17 +261,17 @@ export function AllFeedbacks() {
                     placeholder="Feedback"
                   />
                   <input
-                    value={editValues.solution}
+                    value={editValues.suggestion}
                     onChange={(e) =>
                       setEditValues((v) => ({
                         ...v,
-                        solution: e.target.value,
+                        suggestion: e.target.value,
                       }))
                     }
-                    placeholder="Solution"
+                    placeholder="Suggestion"
                   />
                   <div className="edit-btns">
-                    <button className="save-btn" onClick={() => saveEdit(fb._id)}>
+                    <button className="save-btn" onClick={() => saveEdit(fb.id)}>
                       Save
                     </button>
                     <button
@@ -349,12 +297,12 @@ export function AllFeedbacks() {
               )}
 
               {/* Voice */}
-              {fb.feedback_type === "voice" && voiceUrls[fb._id] && (
+              {fb.feedback_type === "voice" && fb.voice_url && (
                 <div className="voice-player">
                   <p>
                     <strong>Voice Message:</strong>
                   </p>
-                  <audio controls preload="none" src={voiceUrls[fb._id]} />
+                  <audio controls preload="none" src={fb.voice_url} />
                 </div>
               )}
 
@@ -368,42 +316,41 @@ export function AllFeedbacks() {
                 </div>
               )}
 
-              {/* Images */}
-              {fb.image && fb.image.length > 0 && (
+              {/* Image */}
+              {fb.image_url && (
                 <div className="feedback-images">
                   <p>
-                    <strong>Images:</strong>
+                    <strong>Image:</strong>
                   </p>
                   <div className="image-gallery">
-                    {fb.image.map((_, idx) => {
-                      const url = imageUrls[`${fb._id}_${idx}`];
-                      return (
-                        <img
-                          key={idx}
-                          src={url}
-                          alt={`Feedback ${idx + 1}`}
-                          className="feedback-image"
-                          onClick={() => window.open(url, "_blank")}
-                        />
-                      );
-                    })}
+                    <img
+                      src={fb.image_url}
+                      alt="Feedback"
+                      className="feedback-image"
+                      onClick={() => window.open(fb.image_url, "_blank")}
+                    />
                   </div>
                 </div>
               )}
 
               <p className="timestamp">
-                {new Date(fb.createdAt).toLocaleString()}
+                <strong>Created:</strong> {new Date(fb.created_at).toLocaleString()} 
+                {fb.assigned_at && (
+                  <>
+                    {" | "}<strong>Assigned:</strong> {new Date(fb.assigned_at).toLocaleString()}
+                  </>
+                )}
               </p>
 
               <div className="action-btns">
-                {editingId !== fb._id && (
+                {editingId !== fb.id && (
                   <button className="edit-btn" onClick={() => editFeedback(fb)}>
                     Edit
                   </button>
                 )}
                 <button
                   className="delete-btn"
-                  onClick={() => deleteFeedback(fb._id)}
+                  onClick={() => deleteFeedback(fb.id)}
                 >
                   Delete
                 </button>

@@ -6,22 +6,35 @@ import "./css/admin.css";
 export function AdminPanel() {
   const { user, token, isSuperAdmin, apiCall } = useAuth();
   const [users, setUsers] = useState([]);
+  const [buildings, setBuildings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState(null);
   const [showUserForm, setShowUserForm] = useState(false);
+  const [editingUserId, setEditingUserId] = useState(null);
   const [showLoginHistory, setShowLoginHistory] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState({
     username: "",
     email: "",
     password: "",
-    role: "user",
-    profile: {
-      firstName: "",
-      lastName: "",
-      phone: "",
-      department: ""
-    }
+    role: "Jr. engineer",
+    department: "",
+    designation: "",
+    site_id: ""
   });
+
+  const roleOptions = [
+    { value: "Super admin", label: "Super admin" },
+    { value: "Sr. engineer", label: "Sr. engineer" },
+    { value: "Jr. engineer", label: "Jr. engineer" },
+    { value: "Trainee", label: "Trainee" },
+    { value: "Safety", label: "Safety" },
+    { value: "Site dw", label: "Site dw" },
+    { value: "Podium", label: "Podium" },
+    { value: "Store", label: "Store" },
+    { value: "Sr. foreman", label: "Sr. foreman" },
+    { value: "UWT & STP", label: "UWT & STP" }
+  ];
 
   useEffect(() => {
     if (isSuperAdmin()) {
@@ -31,10 +44,9 @@ export function AdminPanel() {
 
   const fetchUsers = async () => {
     try {
-      const response = await apiCall('http://localhost:9999/api/auth/users');
+      const data = await apiCall('http://localhost:9999/api/auth/users');
       
-      if (response && !response.error) {
-        const data = await response.json();
+      if (data && !data.error) {
         setUsers(data.users);
       } else {
         showToast('Failed to fetch users', 'error');
@@ -47,62 +59,125 @@ export function AdminPanel() {
     }
   };
 
+  const fetchBuildings = async () => {
+    try {
+      const data = await apiCall('http://localhost:9999/api/sites');
+      
+      if (data && !Array.isArray(data)) {
+        showToast('Failed to fetch buildings', 'error');
+      } else if (Array.isArray(data)) {
+        setBuildings(data);
+      }
+    } catch (error) {
+      console.error('Error fetching buildings:', error);
+      showToast('Failed to load buildings', 'error');
+    }
+  };
+
+  const handleOpenUserForm = () => {
+    setFormData({
+      username: "",
+      email: "",
+      password: "",
+      role: "Jr. engineer",
+      department: "",
+      designation: "",
+      site_id: ""
+    });
+    fetchBuildings();
+    setEditingUserId(null);
+    setShowPassword(false);
+    setShowUserForm(true);
+  };
+
+  const handleEditUser = (user) => {
+    setFormData({
+      username: user.username,
+      email: user.email,
+      password: "",
+      role: user.role,
+      department: user.department || "",
+      designation: user.designation || "",
+      site_id: user.site_id || ""
+    });
+    setEditingUserId(user.user_id);
+    fetchBuildings();
+    setShowUserForm(true);
+  };
+
   const handleCreateUser = async (e) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      const response = await apiCall('http://localhost:9999/api/auth/register', {
-        method: 'POST',
-        body: JSON.stringify(formData),
-      });
+      if (editingUserId) {
+        // Edit user
+        const updateData = {
+          role: formData.role,
+          department: formData.department,
+          designation: formData.designation,
+          site_id: formData.site_id && formData.site_id.trim() ? formData.site_id : null
+        };
+        if (formData.password && formData.password.length >= 6) {
+          updateData.password = formData.password;
+        }
 
-      if (response && !response.error) {
-        const data = await response.json();
-        showToast('User created successfully', 'success');
-        setShowUserForm(false);
-        setFormData({
-          username: "",
-          email: "",
-          password: "",
-          role: "user",
-          profile: {
-            firstName: "",
-            lastName: "",
-            phone: "",
-            department: ""
-          }
+        const data = await apiCall(`http://localhost:9999/api/auth/users/${editingUserId}`, {
+          method: 'PUT',
+          body: JSON.stringify(updateData),
         });
-        fetchUsers();
+
+        if (data && !data.error) {
+          showToast('User updated successfully', 'success');
+          setShowUserForm(false);
+          setShowPassword(false);
+          setEditingUserId(null);
+          setFormData({
+            username: "",
+            email: "",
+            password: "",
+            role: "Jr. engineer",
+            department: "",
+            designation: "",
+            site_id: ""
+          });
+          fetchUsers();
+        } else {
+          showToast(data?.error || 'Failed to update user', 'error');
+        }
       } else {
-        showToast('Failed to create user', 'error');
+        // Create new user
+        const data = await apiCall('http://localhost:9999/api/auth/register', {
+          method: 'POST',
+          body: JSON.stringify(formData),
+        });
+
+        if (data && !data.error) {
+          showToast('User created successfully', 'success');
+          setShowUserForm(false);
+          setShowPassword(false);
+          setFormData({
+            username: "",
+            email: "",
+            password: "",
+            role: "Jr. engineer",
+            department: "",
+            designation: "",
+            site_id: ""
+          });
+          fetchUsers();
+        } else {
+          showToast(data?.error || 'Failed to create user', 'error');
+        }
       }
     } catch (error) {
-      console.error('Error creating user:', error);
+      console.error('Error saving user:', error);
       showToast('Network error', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleToggleUserStatus = async (userId, currentStatus) => {
-    try {
-      const response = await apiCall(`http://localhost:9999/api/auth/users/${userId}/status`, {
-        method: 'PUT',
-        body: JSON.stringify({ isActive: !currentStatus }),
-      });
-
-      if (response && !response.error) {
-        showToast(`User ${!currentStatus ? 'activated' : 'deactivated'} successfully`, 'success');
-        fetchUsers();
-      } else {
-        showToast('Failed to update user status', 'error');
-      }
-    } catch (error) {
-      console.error('Error updating user status:', error);
-      showToast('Network error', 'error');
-    }
-  };
 
   const handleDeleteUser = async (userId) => {
     if (!window.confirm('Are you sure you want to delete this user? This action cannot be undone.')) {
@@ -126,23 +201,6 @@ export function AdminPanel() {
     }
   };
 
-  const fetchLoginHistory = async (userId) => {
-    try {
-      const response = await apiCall(`http://localhost:9999/api/auth/users/${userId}/login-history`);
-
-      if (response && !response.error) {
-        const data = await response.json();
-        setSelectedUser(data);
-        setShowLoginHistory(true);
-      } else {
-        showToast('Failed to fetch login history', 'error');
-      }
-    } catch (error) {
-      console.error('Error fetching login history:', error);
-      showToast('Network error', 'error');
-    }
-  };
-
   if (!isSuperAdmin()) {
     return (
       <div className="admin-panel">
@@ -161,9 +219,9 @@ export function AdminPanel() {
         <p>Manage users and monitor system activity</p>
         <button 
           className="create-user-btn"
-          onClick={() => setShowUserForm(true)}
+          onClick={() => handleOpenUserForm()}
         >
-          ➕ Create New User
+          Create New User
         </button>
       </div>
 
@@ -173,16 +231,16 @@ export function AdminPanel() {
           <p>Total Users</p>
         </div>
         <div className="stat-card">
-          <h3>{users.filter(u => u.isActive).length}</h3>
-          <p>Active Users</p>
+          <h3>{users.filter(u => u.role === 'Super admin' || u.role === 'Sr. engineer' || u.role === 'super_admin' || u.role === 'admin').length}</h3>
+          <p>Admin Level Users</p>
         </div>
         <div className="stat-card">
-          <h3>{users.filter(u => u.role === 'admin' || u.role === 'super_admin').length}</h3>
-          <p>Admins</p>
+          <h3>{users.filter(u => u.role !== 'Super admin' && u.role !== 'Sr. engineer' && u.role !== 'super_admin' && u.role !== 'admin').length}</h3>
+          <p>Regular Users</p>
         </div>
         <div className="stat-card">
-          <h3>{users.filter(u => u.lastLogin).length}</h3>
-          <p>Users with Login History</p>
+          <h3>{users.filter(u => u.department).length}</h3>
+          <p>Users with Building Assigned</p>
         </div>
       </div>
 
@@ -195,64 +253,52 @@ export function AdminPanel() {
             <table>
               <thead>
                 <tr>
-                  <th>User</th>
+                  <th>Username</th>
                   <th>Email</th>
+                  <th>Building</th>
                   <th>Role</th>
-                  <th>Status</th>
-                  <th>Last Login</th>
+                  <th>Created</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((user) => (
-                  <tr key={user._id}>
+                  <tr key={user.user_id}>
                     <td>
                       <div className="user-info">
                         <div className="user-avatar">
-                          {user.profile?.firstName ? user.profile.firstName[0] : user.username[0]}
+                          {user.username[0].toUpperCase()}
                         </div>
                         <div>
                           <strong>{user.username}</strong>
-                          {user.profile?.firstName && (
-                            <p>{user.profile.firstName} {user.profile.lastName}</p>
-                          )}
                         </div>
                       </div>
                     </td>
                     <td>{user.email}</td>
+                    <td>{user.department || '—'}</td>
                     <td>
                       <span className={`role-badge ${user.role}`}>
                         {user.role}
                       </span>
                     </td>
                     <td>
-                      <span className={`status-badge ${user.isActive ? 'active' : 'inactive'}`}>
-                        {user.isActive ? 'Active' : 'Inactive'}
-                      </span>
-                    </td>
-                    <td>
-                      {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
+                      {user.created_at ? new Date(user.created_at).toLocaleDateString() : 'N/A'}
                     </td>
                     <td>
                       <div className="action-buttons">
-                        <button 
-                          className="history-btn"
-                          onClick={() => fetchLoginHistory(user._id)}
-                          title="View Login History"
-                        >
-                          History
-                        </button>
-                        <button 
-                          className={`toggle-btn ${user.isActive ? 'deactivate' : 'activate'}`}
-                          onClick={() => handleToggleUserStatus(user._id, user.isActive)}
-                          title={user.isActive ? 'Deactivate User' : 'Activate User'}
-                        >
-                          {user.isActive ? 'Deactivate' : 'Activate'}
-                        </button>
-                        {user.role !== 'super_admin' && (
+                        {user.role !== 'super_admin' && user.role !== 'Super admin' && (
+                          <button 
+                            className="edit-btn"
+                            onClick={() => handleEditUser(user)}
+                            title="Edit User"
+                          >
+                            Edit
+                          </button>
+                        )}
+                        {user.role !== 'super_admin' && user.role !== 'Super admin' && (
                           <button 
                             className="delete-btn"
-                            onClick={() => handleDeleteUser(user._id)}
+                            onClick={() => handleDeleteUser(user.user_id)}
                             title="Delete User"
                           >
                             Delete
@@ -273,12 +319,16 @@ export function AdminPanel() {
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
-              <h2>Create New User</h2>
+              <h2>{editingUserId ? 'Edit User' : 'Create New User'}</h2>
               <button 
                 className="close-btn"
-                onClick={() => setShowUserForm(false)}
+                onClick={() => {
+                  setShowUserForm(false);
+                  setShowPassword(false);
+                  setEditingUserId(null);
+                }}
               >
-                ✕
+                X
               </button>
             </div>
             <form onSubmit={handleCreateUser} className="user-form">
@@ -289,6 +339,7 @@ export function AdminPanel() {
                     type="text"
                     value={formData.username}
                     onChange={(e) => setFormData({...formData, username: e.target.value})}
+                    disabled={editingUserId ? true : false}
                     required
                   />
                 </div>
@@ -298,6 +349,7 @@ export function AdminPanel() {
                     type="email"
                     value={formData.email}
                     onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    disabled={editingUserId ? true : false}
                     required
                   />
                 </div>
@@ -305,13 +357,33 @@ export function AdminPanel() {
               
               <div className="form-row">
                 <div className="form-group">
-                  <label>Password</label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({...formData, password: e.target.value})}
-                    required
-                  />
+                  <label>Password {editingUserId && '(Leave blank to keep current password)'}</label>
+                  <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={formData.password}
+                      onChange={(e) => setFormData({...formData, password: e.target.value})}
+                      required={!editingUserId}
+                      style={{ width: '100%', paddingRight: '40px' }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      style={{
+                        position: 'absolute',
+                        right: '10px',
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontSize: '12px',
+                        padding: '0 5px',
+                        color: '#666',
+                      }}
+                      title={showPassword ? 'Hide password' : 'Show password'}
+                    >
+                      {showPassword ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
                 </div>
                 <div className="form-group">
                   <label>Role</label>
@@ -319,68 +391,61 @@ export function AdminPanel() {
                     value={formData.role}
                     onChange={(e) => setFormData({...formData, role: e.target.value})}
                   >
-                    <option value="user">User</option>
-                    <option value="admin">Admin</option>
+                    {roleOptions.map((role) => (
+                      <option key={role.value} value={role.value}>
+                        {role.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
 
               <div className="form-row">
                 <div className="form-group">
-                  <label>First Name</label>
-                  <input
-                    type="text"
-                    value={formData.profile.firstName}
-                    onChange={(e) => setFormData({
-                      ...formData, 
-                      profile: {...formData.profile, firstName: e.target.value}
-                    })}
-                  />
+                  <label>Building</label>
+                  <select
+                    value={formData.department}
+                    onChange={(e) => setFormData({...formData, department: e.target.value})}
+                  >
+                    <option value="">-- Select Building --</option>
+                    <option value="all">All</option>
+                    {buildings.map((building) => (
+                      <option key={building.id} value={building.site_name}>
+                        {building.site_name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="form-group">
-                  <label>Last Name</label>
+                  <label>Designation</label>
                   <input
                     type="text"
-                    value={formData.profile.lastName}
-                    onChange={(e) => setFormData({
-                      ...formData, 
-                      profile: {...formData.profile, lastName: e.target.value}
-                    })}
-                  />
-                </div>
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Phone</label>
-                  <input
-                    type="tel"
-                    value={formData.profile.phone}
-                    onChange={(e) => setFormData({
-                      ...formData, 
-                      profile: {...formData.profile, phone: e.target.value}
-                    })}
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Department</label>
-                  <input
-                    type="text"
-                    value={formData.profile.department}
-                    onChange={(e) => setFormData({
-                      ...formData, 
-                      profile: {...formData.profile, department: e.target.value}
-                    })}
+                    value={formData.designation}
+                    onChange={(e) => setFormData({...formData, designation: e.target.value})}
+                    placeholder="e.g., Manager, Coordinator"
                   />
                 </div>
               </div>
 
               <div className="form-actions">
-                <button type="button" onClick={() => setShowUserForm(false)}>
+                <button type="button" onClick={() => {
+                  setShowUserForm(false);
+                  setShowPassword(false);
+                  setEditingUserId(null);
+                  setFormData({
+                    username: "",
+                    email: "",
+                    password: "",
+                    role: "Jr. engineer",
+                    department: "",
+                    designation: "",
+                    site_id: ""
+                  });
+                }}>
                   Cancel
                 </button>
                 <button type="submit" disabled={loading}>
-                  {loading ? 'Creating...' : 'Create User'}
+                  {loading ? 'Saving...' : editingUserId ? 'Update User' : 'Create User'}
                 </button>
               </div>
             </form>
@@ -398,7 +463,7 @@ export function AdminPanel() {
                 className="close-btn"
                 onClick={() => setShowLoginHistory(false)}
               >
-                ✕
+                X
               </button>
             </div>
             <div className="login-history">

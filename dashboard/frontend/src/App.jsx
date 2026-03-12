@@ -1,3 +1,4 @@
+import ManageEmployee from './ManageEmployee';
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import './css/App.css';
 import{Navbar} from'./Navbar'
@@ -10,6 +11,7 @@ import {Addform} from './add-form'
 import{Login} from './login'
 import { Logout } from "./logout";
 import { AdminPanel } from "./AdminPanel";
+import { Todo } from "./todo";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { ToastContainer } from "./Toast";
 import { AuthProvider } from './AuthContext';
@@ -56,6 +58,12 @@ function App() {
                 <AdminPanel/>
               </ProtectedRoute>
             }></Route>
+              <Route path="/manage-employee" element={<ProtectedRoute><ManageEmployee /></ProtectedRoute>} />
+            <Route path="/todos" element={
+              <ProtectedRoute requireAuth={true}>
+                <Todo />
+              </ProtectedRoute>
+            } />
           </Routes>
         </main>
         

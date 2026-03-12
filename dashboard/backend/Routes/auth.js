@@ -1,8 +1,9 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const bcryptjs = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
-const User = require('../Models/User');
+const supabase = require('../config/supabaseClient');
 const { REPORTS_DIR, USERWISE_CSV } = require('../../../config/paths');
 const router = express.Router();
 
@@ -88,26 +89,37 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// Middleware to check admin role
-const requireAdmin = (req, res, next) => {
-  if (req.user.role !== 'admin' && req.user.role !== 'super_admin') {
-    return res.status(403).json({ error: 'Admin access required' });
+// Middleware to check super admin level access (Super admin OR Sr. engineer OR old super_admin/admin)
+const requireSuperAdminLevel = (req, res, next) => {
+  if (req.user.role !== 'Super admin' && req.user.role !== 'Sr. engineer' && req.user.role !== 'super_admin' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Super admin level access required' });
   }
   next();
 };
 
-// Middleware to check super admin role
+// Middleware to check super admin only (Super admin OR old super_admin)
 const requireSuperAdmin = (req, res, next) => {
-  if (req.user.role !== 'super_admin') {
+  if (req.user.role !== 'Super admin' && req.user.role !== 'super_admin') {
     return res.status(403).json({ error: 'Super admin access required' });
   }
   next();
 };
 
-// Register new user (admin only)
-router.post('/register', authenticateToken, requireAdmin, async (req, res) => {
+// 🔐 Middleware to check Superadmin and Sr. Engineer only (for critical operations like Access Points management)
+const requireSuperAdminOrSrEngineer = (req, res, next) => {
+  if (req.user.role !== 'Super admin' && req.user.role !== 'super_admin' && req.user.role !== 'Sr. engineer') {
+    return res.status(403).json({ error: 'Super admin or Sr. engineer access required' });
+  }
+  next();
+};
+
+// Alias for backward compatibility
+const requireAdmin = requireSuperAdminLevel;
+
+// Register new user (super admin level only)
+router.post('/register', authenticateToken, requireSuperAdminLevel, async (req, res) => {
   try {
-    const { username, email, password, role = 'user', profile } = req.body;
+    const { username, email, password, role = 'Jr. engineer', department, designation, site_id } = req.body;
 
     // Validation
     if (!username || !email || !password) {
@@ -119,28 +131,52 @@ router.post('/register', authenticateToken, requireAdmin, async (req, res) => {
     }
 
     // Check if user already exists
-    const existingUser = await User.findOne({
-      $or: [{ email }, { username }]
-    });
+    const { data: existingUser } = await supabase
+      .from('website_user')
+      .select('*')
+      .or(`username.eq.${username},email.eq.${email}`)
+      .maybeSingle();
 
     if (existingUser) {
       return res.status(409).json({ error: 'User with this email or username already exists' });
     }
 
-    // Create new user
-    const newUser = new User({
-      username,
-      email,
-      password,
-      role,
-      profile
-    });
+    // Hash password
+    const password_hash = await bcryptjs.hash(password, 12);
 
-    await newUser.save();
+    // Create new user - convert empty site_id to null for UUID field
+    const { data: newUser, error: insertError } = await supabase
+      .from('website_user')
+      .insert([
+        {
+          username,
+          email: email.toLowerCase(),
+          password_hash,
+          role,
+          department,
+          designation,
+          site_id: site_id && site_id.trim() ? site_id : null  // Convert empty string to null
+        }
+      ])
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('Registration error:', insertError);
+      return res.status(500).json({ error: 'Failed to create user' });
+    }
 
     res.status(201).json({
       message: 'User created successfully',
-      user: newUser.getPublicProfile()
+      user: {
+        user_id: newUser.user_id,
+        username: newUser.username,
+        email: newUser.email,
+        role: newUser.role,
+        department: newUser.department,
+        designation: newUser.designation,
+        site_id: newUser.site_id
+      }
     });
   } catch (error) {
     console.error('Registration error:', error);
@@ -158,26 +194,21 @@ router.post('/login', async (req, res) => {
     }
 
     // Find user by email
-    const user = await User.findOne({ email: email.toLowerCase() });
-    if (!user) {
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
+    const { data: user, error: queryError } = await supabase
+      .from('website_user')
+      .select('*')
+      .eq('email', email.toLowerCase())
+      .single();
 
-    // Check if user is active
-    if (!user.isActive) {
-      return res.status(401).json({ error: 'Account is deactivated' });
+    if (!user || queryError) {
+      return res.status(401).json({ error: 'Invalid credentials' });
     }
 
     // Verify password
-    const isPasswordValid = await user.comparePassword(password);
+    const isPasswordValid = await bcryptjs.compare(password, user.password_hash);
     if (!isPasswordValid) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-
-    // Add login record
-    const ipAddress = req.ip || req.connection.remoteAddress;
-    const userAgent = req.get('User-Agent');
-    await user.addLoginRecord(ipAddress, userAgent);
 
     // Update user CSV (increment login_count by 1)
     await updateUserCSV(user.username, 1, 0);
@@ -185,10 +216,13 @@ router.post('/login', async (req, res) => {
     // Generate JWT token
     const token = jwt.sign(
       {
-        userId: user._id,
+        user_id: user.user_id,
         username: user.username,
         email: user.email,
-        role: user.role
+        role: user.role,
+        department: user.department,
+        designation: user.designation,
+        site_id: user.site_id
       },
       JWT_SECRET,
       { expiresIn: '24h' }
@@ -197,7 +231,16 @@ router.post('/login', async (req, res) => {
     res.json({
       message: 'Login successful',
       token,
-      user: user.getPublicProfile()
+      user: {
+        user_id: user.user_id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        department: user.department,
+        designation: user.designation,
+        site_id: user.site_id,
+        created_at: user.created_at
+      }
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -208,39 +251,40 @@ router.post('/login', async (req, res) => {
 // Logout (client-side token removal)
 router.post('/logout', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId);
-    if (user) {
-      // Add logout record and calculate session duration
-      await user.addLogoutRecord();
-      
-      // Get session duration from the most recent login record
-      let timeSpent = 0;
-      if (user.loginHistory && user.loginHistory.length > 0) {
-        timeSpent = user.loginHistory[0].sessionDuration || 0;
-      }
-      
-      // Update user CSV (add time_spent in minutes)
-      if (timeSpent > 0) {
-        await updateUserCSV(user.username, 0, timeSpent);
-      }
-    }
-    
+    // Update user CSV with session end (would need session tracking in Supabase if needed)
+    // For now, just clear client-side
     res.json({ message: 'Logout successful' });
   } catch (error) {
     console.error('Logout error:', error);
-    res.json({ message: 'Logout successful' }); // Still return success even if CSV update fails
+    res.json({ message: 'Logout successful' });
   }
 });
 
 // Get current user profile
 router.get('/profile', authenticateToken, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId);
-    if (!user) {
+    const { data: user, error } = await supabase
+      .from('website_user')
+      .select('*')
+      .eq('user_id', req.user.user_id)
+      .single();
+
+    if (!user || error) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    res.json({ user: user.getPublicProfile() });
+    res.json({
+      user: {
+        user_id: user.user_id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        department: user.department,
+        designation: user.designation,
+        site_id: user.site_id,
+        created_at: user.created_at
+      }
+    });
   } catch (error) {
     console.error('Profile error:', error);
     res.status(500).json({ error: 'Failed to fetch profile' });
@@ -250,19 +294,30 @@ router.get('/profile', authenticateToken, async (req, res) => {
 // Update user profile
 router.put('/profile', authenticateToken, async (req, res) => {
   try {
-    const { profile } = req.body;
-    const user = await User.findById(req.user.userId);
-    
-    if (!user) {
+    const { department, designation } = req.body;
+
+    const { data: user, error } = await supabase
+      .from('website_user')
+      .update({ department, designation })
+      .eq('user_id', req.user.user_id)
+      .select()
+      .single();
+
+    if (!user || error) {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    user.profile = { ...user.profile, ...profile };
-    await user.save();
-
     res.json({
       message: 'Profile updated successfully',
-      user: user.getPublicProfile()
+      user: {
+        user_id: user.user_id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        department: user.department,
+        designation: user.designation,
+        site_id: user.site_id
+      }
     });
   } catch (error) {
     console.error('Profile update error:', error);
@@ -283,20 +338,38 @@ router.put('/change-password', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'New password must be at least 6 characters long' });
     }
 
-    const user = await User.findById(req.user.userId);
-    if (!user) {
+    // Get current user
+    const { data: user, error: queryError } = await supabase
+      .from('website_user')
+      .select('*')
+      .eq('user_id', req.user.user_id)
+      .single();
+
+    if (!user || queryError) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     // Verify current password
-    const isCurrentPasswordValid = await user.comparePassword(currentPassword);
+    const isCurrentPasswordValid = await bcryptjs.compare(currentPassword, user.password_hash);
     if (!isCurrentPasswordValid) {
       return res.status(401).json({ error: 'Current password is incorrect' });
     }
 
+    // Hash new password
+    const new_password_hash = await bcryptjs.hash(newPassword, 12);
+
     // Update password
-    user.password = newPassword;
-    await user.save();
+    const { data: updatedUser, error: updateError } = await supabase
+      .from('website_user')
+      .update({ password_hash: new_password_hash })
+      .eq('user_id', req.user.user_id)
+      .select()
+      .single();
+
+    if (updateError) {
+      console.error('Password change error:', updateError);
+      return res.status(500).json({ error: 'Failed to change password' });
+    }
 
     res.json({ message: 'Password changed successfully' });
   } catch (error) {
@@ -305,11 +378,18 @@ router.put('/change-password', authenticateToken, async (req, res) => {
   }
 });
 
-// Get all users (admin only)
-router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
+// Get all users (super admin level only)
+router.get('/users', authenticateToken, requireSuperAdminLevel, async (req, res) => {
   try {
-    const users = await User.find({}, 'username email role isActive lastLogin createdAt profile')
-      .sort({ createdAt: -1 });
+    const { data: users, error } = await supabase
+      .from('website_user')
+      .select('user_id, username, email, role, department, designation, site_id, created_at')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Users fetch error:', error);
+      return res.status(500).json({ error: 'Failed to fetch users' });
+    }
 
     res.json({ users });
   } catch (error) {
@@ -318,56 +398,96 @@ router.get('/users', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
-// Get user login history (admin only)
-router.get('/users/:userId/login-history', authenticateToken, requireAdmin, async (req, res) => {
+// Update user status (toggle active/inactive - can be extended for Supabase)
+router.put('/users/:userId/status', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const user = await User.findById(req.params.userId, 'username email loginHistory');
-    if (!user) {
+    const { role } = req.body;
+
+    const { data: user, error } = await supabase
+      .from('website_user')
+      .update({ role })
+      .eq('user_id', req.params.userId)
+      .select()
+      .single();
+
+    if (!user || error) {
       return res.status(404).json({ error: 'User not found' });
     }
 
     res.json({
+      message: 'User updated successfully',
       user: {
+        user_id: user.user_id,
         username: user.username,
-        email: user.email
-      },
-      loginHistory: user.loginHistory
+        email: user.email,
+        role: user.role,
+        department: user.department,
+        designation: user.designation
+      }
     });
   } catch (error) {
-    console.error('Login history error:', error);
-    res.status(500).json({ error: 'Failed to fetch login history' });
+    console.error('User update error:', error);
+    res.status(500).json({ error: 'Failed to update user' });
   }
 });
 
-// Update user status (admin only)
-router.put('/users/:userId/status', authenticateToken, requireAdmin, async (req, res) => {
+// Update user (super admin level - update role, department, designation, site_id, password)
+router.put('/users/:userId', authenticateToken, requireSuperAdminLevel, async (req, res) => {
   try {
-    const { isActive } = req.body;
-    const user = await User.findByIdAndUpdate(
-      req.params.userId,
-      { isActive },
-      { new: true }
-    );
+    const { role, department, designation, site_id, password } = req.body;
 
-    if (!user) {
+    const updateData = {};
+    if (role) updateData.role = role;
+    if (department !== undefined) updateData.department = department;
+    if (designation !== undefined) updateData.designation = designation;
+    if (site_id !== undefined) updateData.site_id = site_id;
+    
+    // Update password if provided
+    if (password && password.length >= 6) {
+      const password_hash = await bcryptjs.hash(password, 12);
+      updateData.password_hash = password_hash;
+    }
+
+    const { data: user, error } = await supabase
+      .from('website_user')
+      .update(updateData)
+      .eq('user_id', req.params.userId)
+      .select()
+      .single();
+
+    if (!user || error) {
+      console.error('User update error:', error);
       return res.status(404).json({ error: 'User not found' });
     }
 
     res.json({
-      message: 'User status updated successfully',
-      user: user.getPublicProfile()
+      message: 'User updated successfully',
+      user: {
+        user_id: user.user_id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        department: user.department,
+        designation: user.designation,
+        site_id: user.site_id
+      }
     });
   } catch (error) {
-    console.error('User status update error:', error);
-    res.status(500).json({ error: 'Failed to update user status' });
+    console.error('User update error:', error);
+    res.status(500).json({ error: 'Failed to update user: ' + error.message });
   }
 });
 
 // Delete user (super admin only)
 router.delete('/users/:userId', authenticateToken, requireSuperAdmin, async (req, res) => {
   try {
-    const user = await User.findByIdAndDelete(req.params.userId);
-    if (!user) {
+    const { error } = await supabase
+      .from('website_user')
+      .delete()
+      .eq('user_id', req.params.userId);
+
+    if (error) {
+      console.error('User deletion error:', error);
       return res.status(404).json({ error: 'User not found' });
     }
 
@@ -380,15 +500,69 @@ router.delete('/users/:userId', authenticateToken, requireSuperAdmin, async (req
 
 // Verify token endpoint
 router.get('/verify', authenticateToken, (req, res) => {
-  res.json({ 
-    valid: true, 
+  res.json({
+    valid: true,
     user: {
-      userId: req.user.userId,
+      user_id: req.user.user_id,
       username: req.user.username,
       email: req.user.email,
-      role: req.user.role
+      role: req.user.role,
+      department: req.user.department,
+      designation: req.user.designation,
+      site_id: req.user.site_id
     }
   });
 });
 
-module.exports = { router, authenticateToken, requireAdmin, requireSuperAdmin };
+// 🔐 Auto-create superadmin user on startup
+const createSuperAdmin = async () => {
+  try {
+    const defaultEmail = 'superadmin@admin.com';
+    const defaultPassword = 'SuperAdmin@123';
+    const defaultUsername = 'superadmin';
+
+    // Check if superadmin already exists
+    const { data: existing, error: checkError } = await supabase
+      .from('website_user')
+      .select('user_id')
+      .eq('email', defaultEmail)
+      .single();
+
+    if (existing) {
+      console.log('✅ Superadmin user already exists');
+      return;
+    }
+
+    // Hash password
+    const passwordHash = await bcryptjs.hash(defaultPassword, 12);
+
+    // Create superadmin user with super_admin role
+    const { data: newUser, error: createError } = await supabase
+      .from('website_user')
+      .insert([{
+        username: defaultUsername,
+        email: defaultEmail,
+        password_hash: passwordHash,
+        role: 'super_admin',
+        department: 'Admin',
+        designation: 'System Administrator',
+        created_at: new Date().toISOString()
+      }])
+      .select()
+      .single();
+
+    if (createError) {
+      console.error('❌ Error creating superadmin:', createError);
+      return;
+    }
+
+    console.log('✅ Superadmin user created successfully');
+    console.log('   Email:', defaultEmail);
+    console.log('   Password:', defaultPassword);
+    console.log('   ⚠️  Change this password in production!');
+  } catch (error) {
+    console.error('❌ Error in createSuperAdmin:', error);
+  }
+};
+
+module.exports = { router, authenticateToken, requireSuperAdminLevel, requireSuperAdmin, requireSuperAdminOrSrEngineer, requireAdmin: requireSuperAdminLevel, createSuperAdmin };

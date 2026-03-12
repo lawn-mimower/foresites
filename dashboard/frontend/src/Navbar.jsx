@@ -80,6 +80,13 @@ export function Navbar() {
         >
           Manage Access Points
         </Link>
+        <Link 
+          to="/todos" 
+          className={isActive('/todos') ? 'active' : ''}
+          onClick={closeMobileMenu}
+        >
+          My Tasks
+        </Link>
 
         {isAuthenticated() ? (
           <>
@@ -92,6 +99,14 @@ export function Navbar() {
                 >
                   Admin Panel
                 </Link>
+
+                      <Link 
+                        to="/manage-employee" 
+                        className={isActive('/manage-employee') ? 'active' : ''}
+                        onClick={closeMobileMenu}
+                      >
+                        Manage Employee
+                      </Link>
 
             
               </>

@@ -12,10 +12,10 @@ const Feedback = require('../chatbot/Models/userfbschema');
 const SitenameModel = require('../chatbot/Models/sitename');
 const PassphraseModel = require('../chatbot/Models/passphrase');
 
-// Environment Variables
-const accessToken=process.env.accessToken;
-const phone_number_id = process.env.phone_number_id;
-const apiVersion = process.env.WHATSAPP_API_VERSION || 'v24.0';
+// Environment Variablesx
+const accessToken='***REMOVED-META-WHATSAPP-TOKEN***';
+const phone_number_id ='1011037455421699';
+const apiVersion = 'v24.0';
 
 if (!accessToken || !phone_number_id) {
   console.warn('⚠️ Missing WhatsApp API credentials — please set WHATSAPP_ACCESS_TOKEN and WHATSAPP_PHONE_NUMBER_ID.');

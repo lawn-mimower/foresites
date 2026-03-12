@@ -50,11 +50,13 @@ export const AuthProvider = ({ children }) => {
       if (response.ok) {
         const data = await response.json();
         // Update user data with fresh data from server
-        setUser({
+        const updatedUser = {
           ...JSON.parse(localStorage.getItem('userData')),
           ...data.user
-        });
+        };
+        setUser(updatedUser);
         setToken(tokenToVerify);
+        localStorage.setItem('userData', JSON.stringify(updatedUser));
       } else {
         clearAuth();
       }
@@ -105,6 +107,7 @@ export const AuthProvider = ({ children }) => {
     }
 
     const config = {
+      method: 'GET', // default method
       ...options,
       headers: {
         ...defaultHeaders,
@@ -112,8 +115,10 @@ export const AuthProvider = ({ children }) => {
       },
     };
 
+    const fullUrl = url.startsWith('http') ? url : `http://localhost:9999${url}`;
+
     try {
-      const response = await fetch(url, config);
+      const response = await fetch(fullUrl, config);
       
       // If token is invalid or expired, clear auth and redirect to login
       if (response.status === 401 || response.status === 403) {
@@ -122,7 +127,18 @@ export const AuthProvider = ({ children }) => {
         return { error: 'Authentication required' };
       }
 
-      return response;
+      // Parse and return JSON for all successful responses
+      if (response.ok) {
+        return await response.json();
+      }
+
+      // For error responses, try to parse error message
+      try {
+        const errorData = await response.json();
+        return { error: errorData.error || `HTTP ${response.status}` };
+      } catch {
+        return { error: `HTTP ${response.status}` };
+      }
     } catch (error) {
       console.error('API call error:', error);
       throw error;
@@ -164,11 +180,18 @@ export const AuthProvider = ({ children }) => {
   };
 
   const isAdmin = () => {
-    return user && (user.role === 'admin' || user.role === 'super_admin');
+    // Super admin level (Super admin, Sr. engineer, or old admin/super_admin)
+    return user && (user.role === 'Super admin' || user.role === 'Sr. engineer' || user.role === 'admin' || user.role === 'super_admin');
   };
 
   const isSuperAdmin = () => {
-    return user && user.role === 'super_admin';
+    // Only Super admin role (new or old format)
+    return user && (user.role === 'Super admin' || user.role === 'super_admin');
+  };
+
+  const isSuperAdminOrSrEngineer = () => {
+    // Superadmin (new or old format) or Sr. Engineer (for critical operations like Access Points management)
+    return user && (user.role === 'Super admin' || user.role === 'super_admin' || user.role === 'Sr. engineer');
   };
 
   const value = {
@@ -181,6 +204,7 @@ export const AuthProvider = ({ children }) => {
     isAuthenticated,
     isAdmin,
     isSuperAdmin,
+    isSuperAdminOrSrEngineer,
     verifyToken,
     apiCall
   };

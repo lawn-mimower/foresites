@@ -27,7 +27,7 @@ export function Logo({ size = 'medium', showText = true, className = '' }) {
       </div>
       {showText && (
         <div className="logo-text-container">
-          <span className="logo-brand">Foresites - MD Consultants</span>
+          <span className="logo-brand">Foresites</span>
           
         </div>
       )}

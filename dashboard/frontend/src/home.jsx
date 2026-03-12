@@ -13,9 +13,8 @@ export function Home() {
     const fetchStats = async () => {
       setLoading(true);
       try {
-        const response = await apiCall("http://localhost:9999/api/dashboard/stats");
-        if (response && !response.error) {
-          const data = await response.json();
+        const data = await apiCall("http://localhost:9999/api/dashboard/stats");
+        if (data && !data.error) {
           if (data && typeof data.total === "number") setStats(data);
         }
       } catch (error) {
@@ -88,11 +87,11 @@ export function Home() {
         <h1>
           {isAuthenticated() ? (
             <>
-              Welcome back, <span>{user?.profile?.firstName || user?.username}</span>!
+              Welcome back, <span>{user?.username || 'User'}</span>!
             </>
           ) : (
             <>
-              Welcome to <span>MD Consultants</span>
+              Welcome to <span>Foresites</span>
             </>
           )}
         </h1>
@@ -102,7 +101,7 @@ export function Home() {
               Ready to manage construction feedbacks with <strong>OMNIFEED</strong>? 
               <br />
               <span className="user-role-info">
-                Logged in as <strong>{user?.role}</strong> • Last login: {user?.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'First time'}
+                Logged in as <strong>{user?.role}</strong> • Department: {user?.department || 'N/A'}
               </span>
             </>
           ) : (

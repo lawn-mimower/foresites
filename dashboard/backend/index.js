@@ -1,6 +1,6 @@
+require('dotenv').config();
 const express=require('express');
 const app=express();
-const mongoose=require('mongoose');
 const bodyparser=require('body-parser');
 const session=require('express-session');
 const path=require('path');
@@ -17,13 +17,12 @@ app.use("/uploads", express.static(path.join(__dirname, "..", "..", "uploads")))
 console.log("✅ Serving uploads from:", path.join(__dirname, "..", "..", "uploads"));
 
 const dashboardRoutes=require('./Routes/fb');
-const { router: authRoutes } = require('./Routes/auth');
-const User = require('./Models/User');
-
+const { router: authRoutes, createSuperAdmin } = require('./Routes/auth');
+const todoRoutes = require('./Routes/todo');
+const snagAssignmentRoutes = require('./Routes/snagAssignment');
+const siteRoutes = require('./Routes/sites');
+const employeeRoutes = require('./Routes/employee');
 const reportRoutes=require('./Routes/reportRoutes');
-
-
-const MONGOURL='mongodb://abhishekdevelop04_db_user:OCo27RyqFn7wAbLK@ac-v6mdxgy-shard-00-00.lbt0hzv.mongodb.net:27017,ac-v6mdxgy-shard-00-01.lbt0hzv.mongodb.net:27017,ac-v6mdxgy-shard-00-02.lbt0hzv.mongodb.net:27017/?replicaSet=atlas-115nke-shard-0&ssl=true&authSource=admin'
 
 app.use(cors({
   origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173","*"],
@@ -69,31 +68,20 @@ app.use(session({
 
 app.use('/api/dashboard',dashboardRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/todos', todoRoutes);
+app.use('/api/snag-assignments', snagAssignmentRoutes);
+app.use('/api/sites', siteRoutes);
 app.use('/api/report',reportRoutes);
+app.use('/api/employee', employeeRoutes);
 
 app.get('/testpath', (req, res) => {
   res.send(path.join(__dirname, '..', 'uploads'));
 });
 
+// ✅ Supabase is now initialized via environment variables
+console.log('✅ Backend ready - Using Supabase for database operations');
 
-//connect to db
-(async () => {
-  try {
-    await mongoose.connect(MONGOURL, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    console.log("MongoDB connected via Mongoose!");
-    
-    // Create super admin if it doesn't exist
-    await User.createSuperAdmin();
-  } catch (error) {
-    console.error("❌ Unable to connect to MongoDB:", error);
-  }
-})();
-
-
-
-
+// 🔐 Initialize superadmin on startup
+createSuperAdmin();
 
 app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));

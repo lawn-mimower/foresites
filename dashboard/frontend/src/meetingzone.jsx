@@ -7,8 +7,6 @@ export function MeetingZone() {
   const [feedbacks, setFeedbacks] = useState([]);
   const [completed, setCompleted] = useState({});
   const [loading, setLoading] = useState(false);
-  const [imageUrls, setImageUrls] = useState({});
-  const [voiceUrls, setVoiceUrls] = useState({});
   const { apiCall, isAdmin } = useAuth();
 
   const API = "http://localhost:9999/api/dashboard";
@@ -18,14 +16,13 @@ export function MeetingZone() {
     fetchAllFeedbacks();
   }, [apiCall]);
 
-  // ✅ Fetch feedbacks and normalize image/voice URLs
+  // ✅ Fetch feedbacks from Supabase
   const fetchAllFeedbacks = async () => {
     setLoading(true);
     try {
-      const response = await apiCall(`${API}/feedbacks`);
-      if (!response || response.error) return setFeedbacks([]);
+      const data = await apiCall(`${API}/feedbacks`);
+      if (!data || data.error) return setFeedbacks([]);
 
-      const data = await response.json();
       const feedbackData = Array.isArray(data)
         ? data.map((fb) => ({
             feedback_type: fb.feedback_type || "text",
@@ -34,82 +31,6 @@ export function MeetingZone() {
           }))
         : [];
 
-      // 🧭 Build image & voice maps
-      const imgMap = {};
-      const voiceMap = {};
-
-      // Helper function to get media URL (S3 or local)
-      const getMediaUrl = async (filePath) => {
-        if (!filePath) return null;
-        
-        // If already a full URL, return it
-        if (filePath.startsWith("http")) {
-          return filePath;
-        }
-
-        // Check if it's an S3 key (starts with voice/ or images/)
-        if (filePath.startsWith("voice/") || filePath.startsWith("images/")) {
-          try {
-            console.log(`🔍 Fetching S3 URL for: ${filePath}`);
-            const response = await apiCall(`${API}/media-url?path=${encodeURIComponent(filePath)}`);
-            if (response && !response.error) {
-              const data = await response.json();
-              console.log(`✅ Got S3 URL for: ${filePath}`);
-              return data.url;
-            } else {
-              console.warn(`⚠️ Failed to get S3 URL for: ${filePath}`, response?.error);
-            }
-          } catch (err) {
-            console.error("❌ Error fetching S3 URL:", err);
-          }
-        }
-
-        // Fallback to local path
-        if (!filePath.startsWith("/uploads/")) {
-          if (filePath.startsWith("uploads/")) {
-            filePath = "/" + filePath;
-          } else if (filePath.startsWith("images/")) {
-            filePath = `/uploads/${filePath}`;
-          } else if (filePath.startsWith("voice/")) {
-            filePath = `/uploads/${filePath}`;
-          } else {
-            // Try to determine folder from path
-            const ext = filePath.split('.').pop()?.toLowerCase();
-            const folder = ['ogg', 'wav', 'mp3', 'm4a'].includes(ext) ? 'voice' : 'images';
-            filePath = `/uploads/${folder}/${filePath}`;
-          }
-        }
-        return `${BASE_URL}${filePath}`;
-      };
-
-      // Process images and voice files
-      for (const fb of feedbackData) {
-        // 🖼️ Handle images
-        if (fb.image && fb.image.length > 0) {
-          for (let i = 0; i < fb.image.length; i++) {
-            const img = fb.image[i]?.trim();
-            if (!img) continue;
-            const url = await getMediaUrl(img);
-            if (url) {
-              imgMap[`${fb._id}_${i}`] = url;
-            }
-          }
-        }
-
-        // 🎧 Handle voice files
-        if (fb.voice_url) {
-          const voicePath = fb.voice_url?.trim();
-          if (voicePath) {
-            const url = await getMediaUrl(voicePath);
-            if (url) {
-              voiceMap[fb._id] = url;
-            }
-          }
-        }
-      }
-
-      setImageUrls(imgMap);
-      setVoiceUrls(voiceMap);
       setFeedbacks(feedbackData);
     } catch (err) {
       console.error("Error fetching feedbacks:", err);
@@ -131,11 +52,10 @@ export function MeetingZone() {
   const sortUnresolvedByPriority = async () => {
     setLoading(true);
     try {
-      const response = await apiCall(`${API}/feedbacks`);
-      if (!response || response.error) return;
-      const data = await response.json();
+      const data = await apiCall(`${API}/feedbacks`);
+      if (!data || data.error) return;
       let feedbackArray = Array.isArray(data) ? data : [];
-      const unresolved = feedbackArray.filter((fb) => !completed[fb._id]);
+      const unresolved = feedbackArray.filter((fb) => fb.status !== 'resolved');
       unresolved.sort(
         (a, b) =>
           categoryPriority.indexOf(a.category) -
@@ -149,23 +69,24 @@ export function MeetingZone() {
     }
   };
 
- // ✅ Toggle resolved (auto-updates CSV in backend)
-  const toggleTodo = async (id, currentResolved) => {
+ // ✅ Toggle status
+  const toggleTodo = async (id, currentStatus) => {
     try {
+      const newStatus = currentStatus === 'resolved' ? 'pending' : 'resolved';
       const response = await apiCall(`${API}/feedbacks/${id}/resolve`, {
         method: "PUT",
-        body: JSON.stringify({ resolved: !currentResolved }),
+        body: JSON.stringify({ status: newStatus }),
       });
 
       if (response && !response.error) {
-        const updated = await response.json();
-        setFeedbacks((prev) => prev.map((f) => (f._id === id ? updated.updated : f)));
-        setCompleted((prev) => ({ ...prev, [id]: updated.updated.resolved }));
+        const updated = response.updated;
+        setFeedbacks((prev) => prev.map((f) => (f.id === id ? updated : f)));
+        setCompleted((prev) => ({ ...prev, [id]: newStatus === 'resolved' }));
 
         showToast(
-          updated.updated.resolved
-            ? "✅ Feedback marked as resolved (CSV updated)"
-            : "⚠️ Feedback marked as unresolved",
+          newStatus === 'resolved'
+            ? "✅ Feedback marked as resolved"
+            : "⚠️ Feedback marked as pending",
           "success"
         );
       }
@@ -253,8 +174,8 @@ export function MeetingZone() {
         ) : (
           feedbacks.map((fb) => (
             <div
-              key={fb._id}
-              className={`fb-card ${completed[fb._id] ? "resolved" : "pending"}`}
+              key={fb.id}
+              className={`fb-card ${fb.status === 'resolved' ? "resolved" : "pending"}`}
             >
               <div className="fb-header-row">
                 <h3>
@@ -264,33 +185,28 @@ export function MeetingZone() {
                       : "No feedback text")}
                 </h3>
                 <button
-                  onClick={() => toggleTodo(fb._id, completed[fb._id])}
-                  className={`status-btn ${completed[fb._id] ? "done" : ""}`}
+                  onClick={() => toggleTodo(fb.id, fb.status)}
+                  className={`status-btn ${fb.status === 'resolved' ? "done" : ""}`}
                 >
-                  {completed[fb._id] ? "Completed" : "Mark Complete"}
+                  {fb.status === 'resolved' ? "Completed" : "Mark Complete"}
                 </button>
               </div>
 
               <div className="fb-details">
                 <p>
-                  {fb.sitename && (
+                  {fb.site?.site_name && (
                     <>
-                      <strong>Site:</strong> {fb.sitename}{" "}
+                      <strong>Site:</strong> {fb.site.site_name}{" "}
                     </>
                   )}
-                  {fb.name && (
+                  {fb.reporter_name && (
                     <>
-                      | <strong>By:</strong> {fb.name}{" "}
+                      | <strong>By:</strong> {fb.reporter_name}{" "}
                     </>
                   )}
-                  {fb.code && (
+                  {fb.phone_number && (
                     <>
-                      | <strong>Code:</strong> {fb.code}{" "}
-                    </>
-                  )}
-                  {fb.phone && (
-                    <>
-                      | <strong>Phone:</strong> {fb.phone}
+                      | <strong>Phone:</strong> {fb.phone_number}
                     </>
                   )}
                 </p>
@@ -310,13 +226,13 @@ export function MeetingZone() {
                   {fb.feedback_type === "voice" ? "🎙 Voice" : "💬 Text"}
                 </p>
 
-                {/* 🎧 Voice feedback (normalized) */}
-                {fb.feedback_type === "voice" && voiceUrls[fb._id] && (
+                {/* 🎧 Voice feedback */}
+                {fb.feedback_type === "voice" && fb.voice_url && (
                   <div className="voice-player">
                     <p>
                       <strong>Voice Message:</strong>
                     </p>
-                    <audio controls preload="none" src={voiceUrls[fb._id]} />
+                    <audio controls preload="none" src={fb.voice_url} />
                   </div>
                 )}
 
@@ -328,45 +244,34 @@ export function MeetingZone() {
                   </div>
                 )}
 
-                {/* 🖼️ Images (normalized) */}
-                {fb.image && fb.image.length > 0 && (
+                {/* 🖼️ Images */}
+                {fb.image_url && (
                   <div className="feedback-images">
                     <p>
-                      <strong>Images:</strong>
+                      <strong>Image:</strong>
                     </p>
                     <div className="image-gallery">
-                      {fb.image.map((_, i) => {
-                        const finalPath = imageUrls[`${fb._id}_${i}`];
-                        return (
-                          <img
-                            key={i}
-                            src={finalPath}
-                            alt={`Feedback ${i + 1}`}
-                            className="feedback-image"
-                            onClick={() => window.open(finalPath, "_blank")}
-                          />
-                        );
-                      })}
+                      <img
+                        src={fb.image_url}
+                        alt="Feedback"
+                        className="feedback-image"
+                        onClick={() => window.open(fb.image_url, "_blank")}
+                      />
                     </div>
                   </div>
                 )}
 
-                {/* Solution + Suggestions */}
-                {fb.solution && (
+                {/* Suggestion */}
+                {fb.suggestion && (
                   <p>
-                    <strong>Solution:</strong> {fb.solution}
-                  </p>
-                )}
-                {fb.suggestions && (
-                  <p>
-                    <strong>Suggestions:</strong> {fb.suggestions}
+                    <strong>Suggestion:</strong> {fb.suggestion}
                   </p>
                 )}
 
                 {/* Timestamp */}
-                {fb.createdAt && (
+                {fb.created_at && (
                   <p className="timestamp">
-                    {new Date(fb.createdAt).toLocaleString()}
+                    {new Date(fb.created_at).toLocaleString()}
                   </p>
                 )}
               </div>

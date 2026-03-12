@@ -8,15 +8,14 @@ export function Sitewisefb() {
   const [loading, setLoading] = useState(true);
   const { apiCall } = useAuth();
   const [error, setError] = useState("");
-  const API = "http://localhost:9999/api/dashboard";
+  const API = "http://localhost:9999/api/sites";
 
   const refreshSites = async () => {
     setLoading(true);
     setError("");
     try {
-      const response = await apiCall(`${API}/sites`);
-      if (response && !response.error) {
-        const data = await response.json();
+      const data = await apiCall(`${API}`);
+      if (data && !data.error) {
         setSites(Array.isArray(data) ? data : []);
       } else {
         setSites([]);
@@ -36,12 +35,20 @@ export function Sitewisefb() {
   }, [apiCall]);
 
   const [editingId, setEditingId] = useState(null);
-  const [editValues, setEditValues] = useState({ name: "", description: "" });
-  const startEdit = (site) => { setEditingId(site._id); setEditValues({ name: site.name || "", description: site.description || "" }); };
-  const cancelEdit = () => { setEditingId(null); setEditValues({ name: "", description: "" }); };
+  const [editValues, setEditValues] = useState({ site_name: "", site_manager: "", passphrase: "", date_of_start: "" });
+  const startEdit = (site) => { 
+    setEditingId(site.id); 
+    setEditValues({ 
+      site_name: site.site_name || "", 
+      site_manager: site.site_manager || "", 
+      passphrase: site.passphrase || "",
+      date_of_start: site.date_of_start ? site.date_of_start.split('T')[0] : ""
+    }); 
+  };
+  const cancelEdit = () => { setEditingId(null); setEditValues({ site_name: "", site_manager: "", passphrase: "", date_of_start: "" }); };
   const saveEdit = async (id) => {
     try {
-      const response = await apiCall(`${API}/sites/${id}`, {
+      const response = await apiCall(`${API}/${id}`, {
         method: "PUT",
         body: JSON.stringify(editValues)
       });
@@ -61,7 +68,7 @@ export function Sitewisefb() {
 
   const deleteSite = async (id) => {
     try {
-      const response = await apiCall(`${API}/sites/${id}`, { 
+      const response = await apiCall(`${API}/${id}`, { 
         method: "DELETE" 
       });
       
@@ -85,26 +92,30 @@ export function Sitewisefb() {
       {!loading && sites.length === 0 ? <p>No sites found. Add a site in Manage Access.</p> : null}
       <div className="sitebanner">
         {sites.map((site) => (
-          <div className="sitecard" key={site._id}>
+          <div className="sitecard" key={site.id}>
             <div className="site-status"></div>
-            <img src={"https://thumbs.dreamstime.com/b/modern-residential-building-beautiful-recreation-area-modern-residential-building-recreation-area-131403554.jpg"} alt={site.name} />
+            <img src={"https://thumbs.dreamstime.com/b/modern-residential-building-beautiful-recreation-area-modern-residential-building-recreation-area-131403554.jpg"} alt={site.site_name} />
             <div className="sitecard-content">
-              {editingId === site._id ? (
+              {editingId === site.id ? (
                 <div style={{ display: 'grid', gap: 8 }}>
-                  <input value={editValues.name} onChange={(e)=>setEditValues(v=>({ ...v, name: e.target.value }))} placeholder="Site name" />
-                  <input value={editValues.description} onChange={(e)=>setEditValues(v=>({ ...v, description: e.target.value }))} placeholder="Description" />
+                  <input value={editValues.site_name} onChange={(e)=>setEditValues(v=>({ ...v, site_name: e.target.value }))} placeholder="Site name" />
+                  <input value={editValues.site_manager} onChange={(e)=>setEditValues(v=>({ ...v, site_manager: e.target.value }))} placeholder="Site Manager" />
+                  <input value={editValues.passphrase} onChange={(e)=>setEditValues(v=>({ ...v, passphrase: e.target.value }))} placeholder="Passphrase" />
+                  <input type="date" value={editValues.date_of_start} onChange={(e)=>setEditValues(v=>({ ...v, date_of_start: e.target.value }))} placeholder="Date of Start" />
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button onClick={()=>saveEdit(site._id)} className="save-btn">Save</button>
+                    <button onClick={()=>saveEdit(site.id)} className="save-btn">Save</button>
                     <button onClick={cancelEdit} className="cancel-btn">Cancel</button>
                   </div>
                 </div>
               ) : (
                 <>
-                  <h3>{site.name}</h3>
-                  {site.description && <h4 className="location">{site.description}</h4>}
+                  <h3>{site.site_name}</h3>
+                  {site.site_manager && <h4 className="location">Manager: {site.site_manager}</h4>}
+                  {site.passphrase && <p style={{fontSize: '0.9em', color: '#666'}}>Passphrase: {site.passphrase}</p>}
+                  {site.date_of_start && <p style={{fontSize: '0.9em', color: '#666'}}>Started: {new Date(site.date_of_start).toLocaleDateString()}</p>}
                   <div className="site-actions" style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <button onClick={() => startEdit(site)} className="edit-btn">Edit</button>
-                    <button onClick={() => deleteSite(site._id)} className="delete-btn">Delete</button>
+                    <button onClick={() => deleteSite(site.id)} className="delete-btn">Delete</button>
                   </div>
                 </>
               )}
