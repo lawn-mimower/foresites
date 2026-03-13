@@ -180,14 +180,12 @@ export function AllFeedbacks() {
     setAiSearching(true);
     setAiSearchResult("");
     try {
-      const token = localStorage.getItem("authToken");
-      const response = await fetch(`${BASE_URL}/api/dashboard/ask`, {
+      const data = await apiCall(`${API}/chat/message`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ task: q }),
+        body: JSON.stringify({ message: q }),
       });
-      const data = await response.json();
-      setAiSearchResult(beautifyResponse(data.response || data.error || "No response."));
+      const text = data?.response || data?.reply || data?.error || "No response.";
+      setAiSearchResult(beautifyResponse(text));
     } catch (err) {
       setAiSearchResult("Search failed. Please try again.");
     } finally { setAiSearching(false); }
