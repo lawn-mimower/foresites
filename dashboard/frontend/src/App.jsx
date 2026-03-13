@@ -1,6 +1,7 @@
 import ManageEmployee from './ManageEmployee';
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import './css/App.css';
+import './css/design-system.css';
 import{Navbar} from'./Navbar'
 import {Footer} from './Footer'
 import {Home} from './home';
@@ -13,6 +14,7 @@ import{Login} from './login'
 import { Logout } from "./logout";
 import { AdminPanel } from "./AdminPanel";
 import { Todo } from "./todo";
+import { ChatPanel } from "./ChatPanel";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { ToastContainer } from "./Toast";
 import { AuthProvider } from './AuthContext';
@@ -21,10 +23,8 @@ function App() {
   return (
     <AuthProvider>
       <div className="App">
-        <div className="navbar">
-          <Navbar/>
-        </div>
-        
+        <Navbar/>
+
         <main className="page-content">
           <Routes>
             <Route path="/" element={
@@ -70,9 +70,14 @@ function App() {
                 <Todo />
               </ProtectedRoute>
             } />
+            <Route path="/chat" element={
+              <ProtectedRoute requireAuth={true}>
+                <ChatPanel />
+              </ProtectedRoute>
+            } />
           </Routes>
         </main>
-        
+
         <Footer />
         <ToastContainer />
       </div>

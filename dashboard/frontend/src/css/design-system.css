@@ -1,0 +1,257 @@
+/* =============================================
+   FORESITES Shared Design-System Classes
+   ============================================= */
+
+/* ===== Buttons ===== */
+.fs-btn {
+  padding: 10px 20px;
+  font-family: var(--font-body);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.fs-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.fs-btn--primary {
+  background: var(--brand-red);
+  color: white;
+  border-color: var(--brand-red);
+}
+.fs-btn--primary:hover:not(:disabled) {
+  background: var(--brand-red-dark);
+  border-color: var(--brand-red-dark);
+  box-shadow: var(--shadow-md);
+}
+
+.fs-btn--secondary {
+  background: var(--ink-900);
+  color: white;
+  border-color: var(--ink-900);
+}
+.fs-btn--secondary:hover:not(:disabled) {
+  background: var(--ink-700);
+  border-color: var(--ink-700);
+  box-shadow: var(--shadow-md);
+}
+
+.fs-btn--ghost {
+  background: transparent;
+  color: var(--ink-700);
+  border-color: var(--ink-200);
+}
+.fs-btn--ghost:hover:not(:disabled) {
+  background: var(--ink-50);
+  border-color: var(--ink-400);
+}
+
+.fs-btn--success {
+  background: var(--success);
+  color: white;
+  border-color: var(--success);
+}
+.fs-btn--success:hover:not(:disabled) {
+  background: #1B5E20;
+  box-shadow: var(--shadow-md);
+}
+
+.fs-btn--danger {
+  background: var(--error);
+  color: white;
+  border-color: var(--error);
+}
+.fs-btn--danger:hover:not(:disabled) {
+  background: var(--brand-red-dark);
+  box-shadow: var(--shadow-md);
+}
+
+.fs-btn--sm {
+  padding: 6px 12px;
+  font-size: var(--font-size-xs);
+}
+
+/* ===== Badges ===== */
+.fs-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px solid;
+}
+
+.fs-badge--open { background: var(--status-open-bg); color: var(--status-open); border-color: var(--status-open); }
+.fs-badge--in-progress { background: var(--status-progress-bg); color: var(--status-progress); border-color: var(--status-progress); }
+.fs-badge--closed { background: var(--status-closed-bg); color: var(--status-closed); border-color: var(--status-closed); }
+
+.fs-badge--critical { background: var(--priority-critical-bg); color: var(--priority-critical); border-color: var(--priority-critical); }
+.fs-badge--high { background: var(--priority-high-bg); color: var(--priority-high); border-color: var(--priority-high); }
+.fs-badge--medium { background: var(--priority-medium-bg); color: var(--priority-medium); border-color: #F9A825; }
+.fs-badge--low { background: var(--priority-low-bg); color: var(--priority-low); border-color: var(--priority-low); }
+
+/* ===== Cards ===== */
+.fs-card {
+  background: white;
+  border: 1px solid var(--ink-200);
+  box-shadow: var(--shadow-md);
+  padding: var(--space-6);
+  transition: box-shadow 0.15s ease;
+}
+.fs-card:hover {
+  box-shadow: var(--shadow-lg);
+}
+
+/* ===== Stat Cards ===== */
+.fs-stat-card {
+  background: white;
+  border: 1px solid var(--ink-200);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-6);
+  text-align: center;
+  position: relative;
+  border-top: 3px solid var(--brand-red);
+}
+.fs-stat-card .fs-stat-number {
+  font-family: var(--font-display);
+  font-size: var(--font-size-3xl);
+  font-weight: 800;
+  color: var(--ink-900);
+  margin-bottom: var(--space-1);
+}
+.fs-stat-card .fs-stat-label {
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-500);
+}
+
+/* ===== Inputs ===== */
+.fs-input,
+.fs-select,
+.fs-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  font-family: var(--font-body);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--ink-200);
+  background: white;
+  color: var(--ink-800);
+  transition: border-color 0.15s ease;
+}
+.fs-input:focus,
+.fs-select:focus,
+.fs-textarea:focus {
+  outline: none;
+  border-color: var(--brand-red);
+  box-shadow: 0 0 0 2px rgba(200,0,30,0.12);
+}
+.fs-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* ===== Tables ===== */
+.fs-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border: 1px solid var(--ink-200);
+}
+.fs-table th {
+  background: var(--ink-900);
+  color: white;
+  font-family: var(--font-display);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 12px 16px;
+  text-align: left;
+}
+.fs-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ink-100);
+  font-size: var(--font-size-sm);
+}
+.fs-table tr:hover td {
+  background: var(--ink-50);
+}
+
+/* ===== Modals ===== */
+.fs-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: var(--space-4);
+}
+.fs-modal {
+  background: white;
+  border: 1px solid var(--ink-200);
+  box-shadow: var(--shadow-xl);
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.fs-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--ink-200);
+  background: var(--ink-50);
+}
+.fs-modal-header h2 {
+  font-size: var(--font-size-lg);
+  margin: 0;
+}
+.fs-modal-body {
+  padding: var(--space-6);
+}
+
+/* ===== Page Headers ===== */
+.fs-page-header {
+  border-bottom: 3px solid var(--ink-900);
+  padding-bottom: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+.fs-page-header h1 {
+  font-family: var(--font-display);
+  font-size: var(--font-size-4xl);
+  font-weight: 800;
+  color: var(--ink-900);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+.fs-page-header h1::after {
+  content: "";
+  display: block;
+  width: 60px;
+  height: 4px;
+  background: var(--brand-red);
+  margin-top: 8px;
+}
+.fs-page-header .fs-subtitle {
+  color: var(--ink-500);
+  font-size: var(--font-size-sm);
+  margin-top: var(--space-2);
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: var(--font-body);
+  font-weight: 400;
+}

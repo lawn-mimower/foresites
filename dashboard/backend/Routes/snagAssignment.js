@@ -4,12 +4,12 @@ const { randomUUID } = require('crypto');
 const supabase = require('../config/supabaseClient');
 const { authenticateToken, requireAdmin } = require('./auth');
 
-// ✅ Get all snag assignments
+// ✅ Get all snag assignments (joins username from website_user)
 Router.get('/assignments', authenticateToken, async (req, res) => {
   try {
     const { data: assignments, error } = await supabase
       .from('snag_assignment')
-      .select('*')
+      .select('*, assigned_user:website_user!assigned_user_id(username, role)')
       .order('assigned_at', { ascending: false });
 
     if (error) {
@@ -17,7 +17,15 @@ Router.get('/assignments', authenticateToken, async (req, res) => {
       return res.status(500).json({ error: 'Failed to fetch assignments' });
     }
 
-    res.json(assignments);
+    // Flatten the joined user data
+    const flat = (assignments || []).map(a => ({
+      ...a,
+      username: a.assigned_user?.username || 'Unknown',
+      assigned_role: a.assigned_user?.role || '',
+      assigned_user: undefined,
+    }));
+
+    res.json(flat);
   } catch (err) {
     console.error('❌ Error fetching assignments:', err);
     res.status(500).json({ error: 'Failed to fetch assignments' });
@@ -48,7 +56,7 @@ Router.get('/assignments/user', authenticateToken, async (req, res) => {
 // ✅ Create new assignment
 Router.post('/assignments', authenticateToken, requireAdmin, async (req, res) => {
   try {
-    const { snag_id, site_id, assigned_user_id, description } = req.body;
+    const { snag_id, site_id, assigned_user_id, assigner_remarks, due_date } = req.body;
 
     if (!snag_id || !site_id || !assigned_user_id) {
       return res.status(400).json({ error: 'Missing required fields: snag_id, site_id, assigned_user_id' });
@@ -65,9 +73,14 @@ Router.post('/assignments', authenticateToken, requireAdmin, async (req, res) =>
       status: 'open'
     };
 
-    // Add description if provided
-    if (description && description.trim()) {
-      assignmentData.description = description;
+    // Add assigner_remarks if provided
+    if (assigner_remarks && assigner_remarks.trim()) {
+      assignmentData.assigner_remarks = assigner_remarks;
+    }
+
+    // Add due_date if provided
+    if (due_date) {
+      assignmentData.due_date = due_date;
     }
 
     const { data: assignment, error } = await supabase
@@ -95,7 +108,7 @@ Router.post('/assignments', authenticateToken, requireAdmin, async (req, res) =>
 Router.put('/assignments/:assignmentId', authenticateToken, async (req, res) => {
   try {
     const { assignmentId } = req.params;
-    const { status, notes } = req.body;
+    const { status, notes, solution } = req.body;
 
     // First, get the assignment to find the snag_id
     const { data: assignment, error: fetchError } = await supabase
@@ -110,7 +123,8 @@ Router.put('/assignments/:assignmentId', authenticateToken, async (req, res) => 
 
     const updateData = { status };
     if (notes) updateData.notes = notes;
-    
+    if (solution) updateData.solution = solution;
+
     if (status === 'resolved') {
       updateData.resolved_at = new Date().toISOString();
     }
@@ -127,8 +141,9 @@ Router.put('/assignments/:assignmentId', authenticateToken, async (req, res) => 
       return res.status(404).json({ error: 'Assignment not found' });
     }
 
-    // ✅ Also update the main snag table with the same status
-    const snagUpdateData = { status };
+    // Also update the main snag table status (snag only has pending/resolved)
+    const snagStatus = status === 'resolved' ? 'resolved' : 'pending';
+    const snagUpdateData = { status: snagStatus };
 
     const { error: snagError } = await supabase
       .from('snag')
@@ -246,9 +261,11 @@ Router.get('/user/assigned-jobs', authenticateToken, async (req, res) => {
         assigned_at,
         resolved_at,
         proof,
-        description,
+        assigner_remarks,
+        due_date,
+        solution,
         status,
-        snag(id, feedback_type, feedback, transcription, image_url, status),
+        snag(id, feedback_type, feedback, transcription, image_url, status, category),
         site(id, site_name, site_manager)
       `)
       .eq('assigned_user_id', req.user.user_id)
@@ -322,6 +339,29 @@ Router.get('/site/:siteId/users', authenticateToken, async (req, res) => {
   } catch (err) {
     console.error('❌ Error fetching users:', err);
     res.status(500).json({ error: 'Failed to fetch users', details: err.message });
+  }
+});
+
+// ✅ Get all assignable users (fallback when no site_id on user)
+Router.get('/users/all', authenticateToken, async (req, res) => {
+  try {
+    const { data: users, error } = await supabase
+      .from('website_user')
+      .select('user_id, username, role, site_id');
+
+    if (error) {
+      console.error('❌ Error fetching all users:', error);
+      return res.status(500).json({ error: 'Failed to fetch users' });
+    }
+
+    const filteredUsers = (users || []).filter(u =>
+      u.role !== 'Super admin' && u.role !== 'super_admin'
+    );
+
+    res.json(filteredUsers);
+  } catch (err) {
+    console.error('❌ Error fetching all users:', err);
+    res.status(500).json({ error: 'Failed to fetch users' });
   }
 });
 

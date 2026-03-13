@@ -1,0 +1,192 @@
+/* ===== MANAGE EMPLOYEE — FORESITES DESIGN ===== */
+.manage-employee {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-6);
+}
+
+.manage-employee h2 {
+  font-family: var(--font-display);
+  font-size: var(--font-size-3xl);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-900);
+  margin: 0 0 var(--space-6) 0;
+  padding-bottom: var(--space-4);
+  border-bottom: 3px solid var(--ink-900);
+}
+
+.manage-employee h2::after {
+  content: "";
+  display: block;
+  width: 60px;
+  height: 4px;
+  background: var(--brand-red);
+  margin-top: 8px;
+}
+
+/* Form */
+.employee-form {
+  background: white;
+  border: 1px solid var(--ink-200);
+  box-shadow: var(--shadow-sm);
+  border-top: 3px solid var(--brand-red);
+  max-width: 600px;
+  margin: 0 auto var(--space-8) auto;
+  padding: var(--space-6) !important;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4) !important;
+}
+
+.employee-form label {
+  display: flex;
+  flex-direction: column;
+  font-weight: 700;
+  color: var(--ink-700);
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.employee-form input {
+  padding: 10px 14px !important;
+  border: 1px solid var(--ink-200);
+  font-size: var(--font-size-sm);
+  margin-top: var(--space-2) !important;
+  background: white;
+  font-family: var(--font-body);
+}
+
+.employee-form input:focus {
+  outline: none;
+  border-color: var(--brand-red);
+  box-shadow: 0 0 0 2px rgba(200, 0, 30, 0.12);
+}
+
+.employee-form button {
+  padding: 10px 20px !important;
+  border: none;
+  font-weight: 700;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.employee-form button[type="submit"] {
+  background: var(--brand-red);
+  color: white;
+}
+
+.employee-form button[type="submit"]:hover {
+  background: var(--brand-red-dark);
+}
+
+.employee-form button[type="button"] {
+  background: var(--ink-200);
+  color: var(--ink-700);
+}
+
+.employee-form button[type="button"]:hover {
+  background: var(--ink-300);
+}
+
+/* Employee List */
+.employee-list {
+  background: white;
+  border: 1px solid var(--ink-200);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.employee-list h3 {
+  font-family: var(--font-display);
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-900);
+  margin: 0;
+  padding: var(--space-5);
+  border-bottom: 1px solid var(--ink-200);
+}
+
+.employee-list table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.employee-list th,
+.employee-list td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--ink-200);
+  font-size: var(--font-size-sm);
+}
+
+.employee-list th {
+  background: var(--ink-900);
+  color: white;
+  font-weight: 700;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.employee-list td button {
+  padding: 4px 10px;
+  border: none;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  margin-right: 6px;
+}
+
+.employee-list td button:first-child {
+  background: var(--info);
+  color: white;
+}
+
+.employee-list td button:last-child {
+  background: var(--error);
+  color: white;
+}
+
+.employee-list td button:hover {
+  opacity: 0.9;
+}
+
+/* QR Code area */
+.employee-list td button[style] {
+  background: var(--ink-900);
+  color: white;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .manage-employee {
+    padding: var(--space-4);
+  }
+
+  .manage-employee h2 {
+    font-size: var(--font-size-2xl);
+  }
+
+  .employee-form {
+    grid-template-columns: 1fr !important;
+  }
+
+  .employee-list {
+    overflow-x: auto;
+  }
+
+  .employee-list th,
+  .employee-list td {
+    padding: var(--space-2);
+    font-size: var(--font-size-xs);
+  }
+}

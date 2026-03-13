@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import "./css/home.css";
 
@@ -28,49 +29,49 @@ export function Home() {
   }, [apiCall]);
   function beautifyResponse(text) {
     if (!text) return "";
-  
+
     // Replace underscores such as safety_compliance → Safety Compliance
     text = text.replace(/([a-z])_([a-z])/gi, (m, a, b) => a + " " + b.toUpperCase());
-  
+
     // Bold bullet points: "*  something" to "• Something"
     text = text.replace(/\*\s+/g, "• ");
-  
+
     // Convert markdown-style bold **text**
     text = text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-  
+
     // Convert headings like *Title:* → <h3>Title</h3>
     text = text.replace(/\*(.*?)\*:/g, "<h3>$1</h3>");
-  
+
     // Italic markdown *text*
     text = text.replace(/\*(.*?)\*/g, "<em>$1</em>");
-  
+
     // Replace new lines with <br>
     text = text.replace(/\n+/g, "<br/>");
-  
+
     return text;
   }
-  
+
 
   const handleAsk = async () => {
     const userQuery = query.trim();
     if (!userQuery) return setAnswer("");
-  
+
     setAnswer("Processing...");
-  
+
     try {
       const token = localStorage.getItem("authToken");
-  
+
       const response = await fetch("http://localhost:9999/api/dashboard/ask", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,   // 🔥 REQUIRED
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ task: userQuery }),
       });
-  
+
       const data = await response.json();
-  
+
       setAnswer(beautifyResponse(data.response || data.error || "No response."));
 
     } catch (error) {
@@ -78,7 +79,7 @@ export function Home() {
       setAnswer("Something went wrong.");
     }
   };
-  
+
 
   return (
     <div className="home-wrapper">
@@ -87,7 +88,7 @@ export function Home() {
         <h1>
           {isAuthenticated() ? (
             <>
-              Welcome back, <span>{user?.username || 'User'}</span>!
+              Welcome back, <span>{user?.username || 'User'}</span>
             </>
           ) : (
             <>
@@ -98,10 +99,10 @@ export function Home() {
         <p>
           {isAuthenticated() ? (
             <>
-              Ready to manage construction feedbacks with <strong>OMNIFEED</strong>? 
+              Construction feedback management powered by <strong>OMNIFEED</strong>
               <br />
               <span className="user-role-info">
-                Logged in as <strong>{user?.role}</strong> • Department: {user?.department || 'N/A'}
+                {user?.role} &bull; {user?.department || 'N/A'}
               </span>
             </>
           ) : (
@@ -109,7 +110,7 @@ export function Home() {
               Monitor, manage, and track construction feedbacks with <strong>OMNIFEED</strong>
               <br />
               <span className="login-prompt">
-                <a href="/login" style={{ color: 'var(--primary-600)', textDecoration: 'none' }}>
+                <a href="/login">
                   Sign in to access all features
                 </a>
               </span>
@@ -121,17 +122,14 @@ export function Home() {
       {/* Stats */}
       <section className="stats-section">
         {[
-          { label: "Total Feedbacks", value: stats.total, color: "#3b82f6" },
-          { label: "Resolved", value: stats.resolved, color: "#10b981" },
-          { label: "Pending", value: stats.pending, color: "#ef4444" },
+          { label: "Total Feedbacks", value: stats.total },
+          { label: "Resolved", value: stats.resolved },
+          { label: "Pending", value: stats.pending },
         ].map((c, i) => (
           <div className="stat-item" key={i}>
-            <div className="stat-icon" style={{ color: c.color, background: `${c.color}15` }}>
-              <div className="stat-icon-inner" style={{ backgroundColor: c.color }}></div>
-            </div>
             <div className="stat-info">
               <h4>{c.label}</h4>
-              <p style={{ color: c.color }}>{loading ? "—" : c.value}</p>
+              <p>{loading ? "—" : c.value}</p>
             </div>
           </div>
         ))}
@@ -151,6 +149,18 @@ export function Home() {
             <button onClick={handleAsk}>Ask</button>
           </div>
           {answer && <div className="query-result" dangerouslySetInnerHTML={{ __html: answer }}></div>}
+          <Link to="/chat" style={{
+            display: "inline-block",
+            marginTop: "1rem",
+            color: "var(--brand-red)",
+            fontWeight: 700,
+            fontSize: "var(--font-size-xs)",
+            textDecoration: "none",
+            textTransform: "uppercase",
+            letterSpacing: "0.04em"
+          }}>
+            Open Full Chat &rarr;
+          </Link>
         </div>
 
         <div className="highlight-panel">

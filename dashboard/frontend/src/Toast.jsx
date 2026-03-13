@@ -7,6 +7,13 @@ export function showToast(message, type = "info", durationMs = 3000) {
   window.dispatchEvent(event);
 }
 
+const borderFor = (type) => {
+  if (type === "success") return "var(--success)";
+  if (type === "error") return "var(--brand-red)";
+  if (type === "warning") return "var(--warning)";
+  return "var(--info)";
+};
+
 export function ToastContainer() {
   const [toasts, setToasts] = useState([]);
 
@@ -22,22 +29,23 @@ export function ToastContainer() {
     return () => window.removeEventListener("app:toast", handler);
   }, []);
 
-  const bgFor = (type) => {
-    if (type === "success") return "#16a34a";
-    if (type === "error") return "#dc2626";
-    if (type === "warning") return "#f59e0b";
-    return "#2563eb";
-  };
-
   return (
-    <div style={{ position: 'fixed', right: 16, bottom: 16, display: 'grid', gap: 8, zIndex: 9999 }}>
+    <div style={{ position: 'fixed', right: 16, bottom: 16, display: 'grid', gap: 6, zIndex: 9999 }}>
       {toasts.map((t) => (
-        <div key={t.id} style={{ background: bgFor(t.type), color: 'white', padding: '10px 14px', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.15)', minWidth: 240 }}>
+        <div key={t.id} style={{
+          background: 'var(--ink-900)',
+          color: 'white',
+          padding: '12px 16px',
+          borderLeft: `3px solid ${borderFor(t.type)}`,
+          boxShadow: 'var(--shadow-lg)',
+          minWidth: 260,
+          fontFamily: 'var(--font-body)',
+          fontSize: '14px',
+          fontWeight: 500,
+        }}>
           {t.message}
         </div>
       ))}
     </div>
   );
 }
-
-

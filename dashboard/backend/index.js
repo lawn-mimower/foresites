@@ -23,6 +23,7 @@ const snagAssignmentRoutes = require('./Routes/snagAssignment');
 const siteRoutes = require('./Routes/sites');
 const employeeRoutes = require('./Routes/employee');
 const reportRoutes=require('./Routes/reportRoutes');
+const chatRoutes = require('./Routes/chatRoutes');
 
 app.use(cors({
   origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173","*"],
@@ -73,6 +74,7 @@ app.use('/api/snag-assignments', snagAssignmentRoutes);
 app.use('/api/sites', siteRoutes);
 app.use('/api/report',reportRoutes);
 app.use('/api/employee', employeeRoutes);
+app.use('/api/chat', chatRoutes);
 
 app.get('/testpath', (req, res) => {
   res.send(path.join(__dirname, '..', 'uploads'));

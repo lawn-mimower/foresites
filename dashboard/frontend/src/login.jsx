@@ -76,7 +76,7 @@ export function Login() {
               <span className="logo-text">FS</span>
             </div>
           </div>
-          <h1>Foresites</h1>
+          <h1>FORESITES</h1>
           <p className="login-subtitle">Professional Construction Management Platform</p>
         </div>
 

@@ -1,16 +1,17 @@
 import { Link, useLocation } from "react-router-dom";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from './AuthContext';
-import { Logo } from './components/Logo';
 import './css/navbar.css';
 
 export function Navbar() {
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showAdminDropdown, setShowAdminDropdown] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const { user, isAuthenticated, logout, isAdmin } = useAuth();
+  const adminRef = useRef(null);
+  const userRef = useRef(null);
 
-  const toggleMobileMenu = () => setIsMobileMenuOpen(!isMobileMenuOpen);
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
   const isActive = (path) => location.pathname === path;
 
@@ -20,146 +21,122 @@ export function Navbar() {
     closeMobileMenu();
   };
 
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (adminRef.current && !adminRef.current.contains(e.target)) setShowAdminDropdown(false);
+      if (userRef.current && !userRef.current.contains(e.target)) setShowUserMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
+  const mainLinks = [
+    { to: '/', label: 'Dashboard' },
+    { to: '/allfeedbacks', label: 'All Snags' },
+    { to: '/meetingzone', label: 'Assigned Jobs' },
+    { to: '/showsites', label: 'Sites' },
+    { to: '/todos', label: 'My Tasks' },
+    { to: '/chat', label: 'AI Chat' },
+  ];
 
-
+  const adminLinks = [
+    { to: '/admin', label: 'Admin Panel' },
+    { to: '/assign-snags', label: 'Assign Snags' },
+    { to: '/manage-employee', label: 'Manage Employee' },
+    { to: '/add-form', label: 'Access Points' },
+  ];
 
   return (
-    <div className="navigation">
-      <div className="nav-brand">
-        <Link to="/" className="brand-link">
-          <Logo size="medium" showText={true} />
-        </Link>
-      </div>
-
-      <button 
-        className="mobile-menu-toggle"
-        onClick={toggleMobileMenu}
-        aria-label="Toggle mobile menu"
-      >
-        <span className={`hamburger ${isMobileMenuOpen ? 'open' : ''}`}>
-          <span></span>
-          <span></span>
-          <span></span>
-        </span>
-      </button>
-
-      <div className={`nav-links ${isMobileMenuOpen ? 'open' : ''}`}>
-        <Link 
-          to="/" 
-          className={isActive('/') ? 'active' : ''}
-          onClick={closeMobileMenu}
-        >
-          Home
-        </Link>
-        <Link 
-          to="/allfeedbacks" 
-          className={isActive('/allfeedbacks') ? 'active' : ''}
-          onClick={closeMobileMenu}
-        >
-          All Feedbacks
-        </Link>
-        <Link 
-          to="/meetingzone" 
-          className={isActive('/meetingzone') ? 'active' : ''}
-          onClick={closeMobileMenu}
-        >
-          Assigned Jobs
-        </Link>
-        <Link 
-          to="/showsites" 
-          className={isActive('/showsites') ? 'active' : ''}
-          onClick={closeMobileMenu}
-        >
-          Sites
-        </Link>
-        <Link 
-          to="/add-form" 
-          className={isActive('/add-form') ? 'active' : ''}
-          onClick={closeMobileMenu}
-        >
-          Manage Access Points
-        </Link>
-        <Link 
-          to="/todos" 
-          className={isActive('/todos') ? 'active' : ''}
-          onClick={closeMobileMenu}
-        >
-          My Tasks
+    <nav className="fs-topbar">
+      <div className="fs-topbar-inner">
+        {/* Brand */}
+        <Link to="/" className="fs-topbar-brand" onClick={closeMobileMenu}>
+          <span className="fs-brand-text">FORESITES</span>
+          <span className="fs-brand-live"></span>
         </Link>
 
-        {isAuthenticated() ? (
-          <>
-            {isAdmin() && (
-              <>
-                <Link 
-                  to="/admin" 
-                  className={isActive('/admin') ? 'active' : ''}
+        {/* Hamburger */}
+        <button
+          className="fs-hamburger"
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          aria-label="Toggle menu"
+        >
+          <span className={`fs-hamburger-icon ${isMobileMenuOpen ? 'open' : ''}`}>
+            <span></span><span></span><span></span>
+          </span>
+        </button>
+
+        {/* Nav links */}
+        <div className={`fs-topbar-nav ${isMobileMenuOpen ? 'open' : ''}`}>
+          {isAuthenticated() && (
+            <>
+              {mainLinks.map(link => (
+                <Link
+                  key={link.to}
+                  to={link.to}
+                  className={`fs-nav-link ${isActive(link.to) ? 'active' : ''}`}
                   onClick={closeMobileMenu}
                 >
-                  Admin Panel
+                  {link.label}
                 </Link>
+              ))}
 
-                <Link 
-                  to="/assign-snags" 
-                  className={isActive('/assign-snags') ? 'active' : ''}
-                  onClick={closeMobileMenu}
-                >
-                  Assign Snags
-                </Link>
+              {/* Admin dropdown */}
+              {isAdmin() && (
+                <div className="fs-admin-dropdown" ref={adminRef}>
+                  <button
+                    className={`fs-nav-link fs-admin-trigger ${adminLinks.some(l => isActive(l.to)) ? 'active' : ''}`}
+                    onClick={() => setShowAdminDropdown(!showAdminDropdown)}
+                  >
+                    Admin &#9662;
+                  </button>
+                  {showAdminDropdown && (
+                    <div className="fs-dropdown-menu">
+                      {adminLinks.map(link => (
+                        <Link
+                          key={link.to}
+                          to={link.to}
+                          className={`fs-dropdown-item ${isActive(link.to) ? 'active' : ''}`}
+                          onClick={() => { setShowAdminDropdown(false); closeMobileMenu(); }}
+                        >
+                          {link.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
 
-                      <Link 
-                        to="/manage-employee" 
-                        className={isActive('/manage-employee') ? 'active' : ''}
-                        onClick={closeMobileMenu}
-                      >
-                        Manage Employee
-                      </Link>
-
-            
-              </>
-            )}
-
-            <div className="user-menu">
-              <button 
-                className="user-menu-toggle"
-                onClick={() => setShowUserMenu(!showUserMenu)}
-              >
-                <span className="user-avatar">
-                  {user?.profile?.firstName ? user.profile.firstName[0] : user?.username[0]}
+          {/* User menu / Login */}
+          {isAuthenticated() ? (
+            <div className="fs-user-section" ref={userRef}>
+              <button className="fs-user-trigger" onClick={() => setShowUserMenu(!showUserMenu)}>
+                <span className="fs-user-avatar">
+                  {user?.profile?.firstName ? user.profile.firstName[0] : user?.username?.[0] || 'U'}
                 </span>
-                <span className="user-name">{user?.username}</span>
-                <span className="user-role">{user?.role}</span>
+                <span className="fs-user-name">{user?.username}</span>
+                <span className="fs-user-role-tag">{user?.role}</span>
               </button>
-              
               {showUserMenu && (
-                <div className="user-dropdown">
-                  <div className="user-info">
-                    <p className="user-email">{user?.email}</p>
-                    <p className="user-role-badge">{user?.role}</p>
+                <div className="fs-user-dropdown">
+                  <div className="fs-user-dropdown-info">
+                    <div className="fs-user-dropdown-email">{user?.email}</div>
+                    <div className="fs-user-dropdown-role">{user?.role}</div>
                   </div>
-                  <div className="user-actions">
-                    <Link to="/profile" onClick={() => setShowUserMenu(false)}>
-                      Profile
-                    </Link>
-                    <button onClick={handleLogout}>
-                      Logout
-                    </button>
+                  <div className="fs-user-dropdown-actions">
+                    <button onClick={handleLogout} className="fs-user-dropdown-btn">Logout</button>
                   </div>
                 </div>
               )}
             </div>
-          </>
-        ) : (
-          <Link 
-            to="/login" 
-            className={isActive('/login') ? 'active' : ''}
-            onClick={closeMobileMenu}
-          >
-            Login
-          </Link>
-        )}
+          ) : (
+            <Link to="/login" className="fs-nav-link" onClick={closeMobileMenu}>Login</Link>
+          )}
+        </div>
       </div>
-    </div>
+    </nav>
   );
 }

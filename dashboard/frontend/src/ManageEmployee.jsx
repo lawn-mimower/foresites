@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from "react-qr-code";
+import "./css/manage-employee.css";
 const API_URL = "http://localhost:9999/api/employee";
 
 const initialForm = {
@@ -85,35 +86,25 @@ export default function ManageEmployee() {
   return (
     <div className="manage-employee">
       <h2>Manage Employees</h2>
-      <form onSubmit={handleSubmit} className="employee-form" style={{
-        display: 'grid',
-        gridTemplateColumns: '1fr 1fr',
-        gap: '16px',
-        maxWidth: 500,
-        margin: '0 auto',
-        background: '#f9f9f9',
-        padding: 24,
-        borderRadius: 12,
-        boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
-      }}>
-        <label style={{display:'flex',flexDirection:'column'}}>Name
-          <input name="name" value={form.name} onChange={handleChange} placeholder="Name" required style={{padding:8,marginTop:4}} />
+      <form onSubmit={handleSubmit} className="employee-form">
+        <label>Name
+          <input name="name" value={form.name} onChange={handleChange} placeholder="Name" required />
         </label>
-        <label style={{display:'flex',flexDirection:'column'}}>Phone Number
-          <input name="phone" value={form.phone} onChange={handleChange} placeholder="Phone Number" required style={{padding:8,marginTop:4}} />
+        <label>Phone Number
+          <input name="phone" value={form.phone} onChange={handleChange} placeholder="Phone Number" required />
         </label>
-        <label style={{display:'flex',flexDirection:'column'}}>Contractor Name
-          <input name="contractor" value={form.contractor} onChange={handleChange} placeholder="Contractor Name" required style={{padding:8,marginTop:4}} />
+        <label>Contractor Name
+          <input name="contractor" value={form.contractor} onChange={handleChange} placeholder="Contractor Name" required />
         </label>
-        <label style={{display:'flex',flexDirection:'column'}}>ID
-          <input name="id" value={form.id} onChange={handleChange} placeholder="ID" required style={{padding:8,marginTop:4}} />
+        <label>ID
+          <input name="id" value={form.id} onChange={handleChange} placeholder="ID" required />
         </label>
-        <label style={{display:'flex',flexDirection:'column'}}>Date of Joining
-          <input name="date" value={form.date} onChange={handleChange} type="date" placeholder="Date of Joining" required style={{padding:8,marginTop:4}} />
+        <label>Date of Joining
+          <input name="date" value={form.date} onChange={handleChange} type="date" placeholder="Date of Joining" required />
         </label>
         <div style={{gridColumn:'span 2',textAlign:'center'}}>
-          <button type="submit" style={{padding:'8px 24px',marginRight:8}}>{editIndex !== null ? 'Update' : 'Add'} Employee</button>
-          {editIndex !== null && <button type="button" onClick={() => { setForm(initialForm); setEditIndex(null); }} style={{padding:'8px 24px'}}>Cancel</button>}
+          <button type="submit">{editIndex !== null ? 'Update' : 'Add'} Employee</button>
+          {editIndex !== null && <button type="button" onClick={() => { setForm(initialForm); setEditIndex(null); }}>Cancel</button>}
         </div>
       </form>
       <div className="employee-list">
