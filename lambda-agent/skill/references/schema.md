@@ -38,9 +38,11 @@
 | assigned_at | TIMESTAMPTZ | When Sr. Eng assigned |
 | acknowledged_at | TIMESTAMPTZ | When Jr. Eng acknowledged via WhatsApp |
 | time_requested | INTERVAL | Jr. Eng's resolution estimate (e.g. '4 hours', '2 days') |
-| status | TEXT | "open", "acknowledged", "in_progress", "proof_submitted", "resolved", "rejected" |
-| description | TEXT | Task instruction from Sr. Eng |
+| status | TEXT | "open", "in_progress", "in_review", "resolved", "rejected" |
+| assigner_remarks | TEXT | Task instruction from Sr. Eng |
+| solution | TEXT | Jr. Eng's description of fix applied |
 | proof | TEXT | S3 key of completion photo from Jr. Eng |
+| due_date | TIMESTAMPTZ | Deadline set by Sr. Eng |
 | resolved_at | TIMESTAMPTZ | When Sr. Eng approved |
 | rejection_remarks | TEXT | Why Sr. Eng rejected proof (if rejected) |
 
@@ -70,14 +72,22 @@
 | closed_date | TIMESTAMPTZ | When completed (NULL if open) |
 | created_at | TIMESTAMPTZ | |
 
-## Category Name Mapping
+## chat_session
+| Column | Type | Notes |
+|--------|------|-------|
+| session_id | UUID, PK | |
+| user_id | UUID, FK → website_user.user_id | |
+| title | TEXT | |
+| created_at | TIMESTAMPTZ | |
+| updated_at | TIMESTAMPTZ | |
 
-When displaying categories to users, use these readable names:
-
-| DB value | Display name |
-|----------|-------------|
-| safety_compliance | Safety Compliance |
-| design_quality | Design Quality |
-| resource_availability | Resource Availability |
-| workflow_efficiency | Workflow Efficiency |
-| other | Other |
+## chat_message
+| Column | Type | Notes |
+|--------|------|-------|
+| message_id | UUID, PK | |
+| session_id | UUID, FK → chat_session.session_id | |
+| role | TEXT | One of: user, assistant, tool_call, tool_result |
+| content | TEXT | |
+| chart_data | JSONB | |
+| metadata | JSONB | |
+| created_at | TIMESTAMPTZ | |

@@ -8,7 +8,7 @@ from google.genai.errors import ClientError, ServerError
 
 from tools.sql_tool import execute_sql
 from tools.chart_tool import build_chart
-from system_prompt import SYSTEM_PROMPT
+from system_prompt import get_system_prompt
 
 MAX_TOOL_ROUNDS = 8
 
@@ -166,6 +166,8 @@ def run_agent(user_message: str, history: list[dict]) -> dict:
         )
     )
 
+    system_prompt = get_system_prompt()
+
     chart_data = None
     start = time.time()
     tool_rounds = 0
@@ -179,7 +181,7 @@ def run_agent(user_message: str, history: list[dict]) -> dict:
                 model=model_id,
                 contents=contents,
                 config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
+                    system_instruction=system_prompt,
                     tools=[TOOLS],
                     temperature=0.3,
                 ),
