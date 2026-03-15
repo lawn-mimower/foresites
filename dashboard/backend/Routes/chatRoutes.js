@@ -49,7 +49,7 @@ router.post('/message', authenticateToken, async (req, res) => {
         session_id: session_id || null,
         message: message.trim(),
       },
-      { timeout: 35000, headers: { 'Content-Type': 'application/json' } }
+      { timeout: 120000, headers: { 'Content-Type': 'application/json' } }
     );
 
     // Lambda returns { statusCode, body } — body may be a string

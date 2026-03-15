@@ -256,6 +256,12 @@
 }
 @keyframes cardIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 
+/* Highlighted snag — navigated from dashboard "View →" */
+.snag-highlighted {
+  border: 2px solid var(--brand-black, #0D0D0D) !important;
+  box-shadow: 0 0 0 1px var(--brand-black, #0D0D0D);
+}
+
 /* Stagger entrance */
 .snag-card:nth-child(1){animation-delay:0.05s}
 .snag-card:nth-child(2){animation-delay:0.10s}

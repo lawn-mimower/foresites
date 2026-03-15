@@ -248,4 +248,129 @@ Router.get('/media-url', async (req, res) => {
   }
 });
 
+// ── Metrics cache: 30-second TTL per site_id ──
+const metricsCache = new Map();
+const CACHE_TTL = 30_000;
+
+function getCachedMetrics(key) {
+  const entry = metricsCache.get(key);
+  if (entry && Date.now() - entry.ts < CACHE_TTL) return entry.data;
+  return null;
+}
+
+// ✅ Dashboard metrics — RPC for headlines (~20ms) + 3 parallel bulk queries for sparklines
+Router.get('/dashboard-metrics', async (req, res) => {
+  try {
+    const siteId = req.query.site_id || null;
+    const cacheKey = `metrics_${siteId || 'all'}`;
+
+    // Return from cache if fresh
+    const cached = getCachedMetrics(cacheKey);
+    if (cached) return res.json(cached);
+
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    // 7-day window for sparklines
+    const sevenDaysAgo = new Date(now);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+    const sparkStart = sevenDaysAgo.toISOString().split('T')[0] + 'T00:00:00.000Z';
+
+    // ── 4 PARALLEL calls: 1 RPC + 3 bulk fetches ──
+    const rpcArgs = {};
+    if (siteId) rpcArgs.p_site_id = siteId;
+
+    // Snags from last 7 days (for sparklines only)
+    let snagQ = supabase.from('snag').select('created_at, category, status')
+      .gte('created_at', sparkStart);
+    if (siteId) snagQ = snagQ.eq('site_id', siteId);
+
+    // Assignments: only those with due_date or resolved_at in the 7-day window
+    let assignQ = supabase.from('snag_assignment').select('status, resolved_at, due_date');
+    if (siteId) assignQ = assignQ.eq('site_id', siteId);
+
+    // ALL open snags for category counts (not limited to 7 days)
+    let catQ = supabase.from('snag').select('category').neq('status', 'resolved');
+    if (siteId) catQ = catQ.eq('site_id', siteId);
+
+    const [rpcRes, snagRes, assignRes, catRes] = await Promise.all([
+      supabase.rpc('dashboard_metrics', rpcArgs),
+      snagQ,
+      assignQ,
+      catQ,
+    ]);
+
+    // ── Headline numbers from RPC (with fallback if RPC fails) ──
+    let reported_24h = 0, completed_24h = 0, due_today = 0, overdue = 0;
+
+    if (rpcRes.error) {
+      console.warn('⚠️ RPC dashboard_metrics failed, falling back to JS counts:', rpcRes.error.message);
+      // Fallback: compute from bulk data
+      const twentyFourAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+      const allSnags = snagRes.data || [];
+      const allAssigns = assignRes.data || [];
+      reported_24h = allSnags.filter(s => s.created_at >= twentyFourAgo).length;
+      completed_24h = allAssigns.filter(a => a.status === 'resolved' && a.resolved_at && a.resolved_at >= twentyFourAgo).length;
+      for (const a of allAssigns) {
+        if (a.status === 'resolved' || !a.due_date) continue;
+        const ds = a.due_date.split('T')[0];
+        if (ds === todayStr) due_today++;
+        else if (ds < todayStr) overdue++;
+      }
+    } else {
+      const headlines = rpcRes.data || {};
+      console.log('📊 RPC dashboard_metrics returned:', JSON.stringify(headlines));
+      reported_24h = headlines.reported_24h ?? 0;
+      completed_24h = headlines.completed_24h ?? 0;
+      due_today = headlines.due_today ?? 0;
+      overdue = headlines.overdue ?? 0;
+    }
+
+    const snags = snagRes.data || [];
+    const assigns = assignRes.data || [];
+
+    // ── Sparklines: bucket into 7 day bins in JS ──
+    const dayKeys = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      dayKeys.push(d.toISOString().split('T')[0]);
+    }
+
+    const sparklines = { reported: [], completed: [], due: [], overdue: [] };
+    for (const dk of dayKeys) {
+      sparklines.reported.push(
+        snags.filter(s => s.created_at && s.created_at.startsWith(dk)).length
+      );
+      sparklines.completed.push(
+        assigns.filter(a => a.status === 'resolved' && a.resolved_at && a.resolved_at.startsWith(dk)).length
+      );
+      sparklines.due.push(
+        assigns.filter(a => a.status !== 'resolved' && a.due_date && a.due_date.startsWith(dk)).length
+      );
+      // Overdue on day X = assignments due before day X and still unresolved
+      sparklines.overdue.push(
+        assigns.filter(a => a.status !== 'resolved' && a.due_date && a.due_date.split('T')[0] < dk).length
+      );
+    }
+
+    // ── Category counts from ALL open snags (separate query, not 7-day limited) ──
+    const category_counts = {};
+    (catRes.data || []).forEach(r => {
+      const cat = r.category || 'uncategorized';
+      category_counts[cat] = (category_counts[cat] || 0) + 1;
+    });
+
+    const result = { reported_24h, completed_24h, due_today, overdue, sparklines, category_counts };
+
+    // Cache for 30s
+    metricsCache.set(cacheKey, { data: result, ts: Date.now() });
+
+    res.json(result);
+  } catch (err) {
+    console.error('❌ Error fetching dashboard metrics:', err);
+    res.status(500).json({ error: 'Failed to fetch dashboard metrics' });
+  }
+});
+
 module.exports = Router;

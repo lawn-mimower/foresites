@@ -5,6 +5,7 @@ import './css/design-system.css';
 import{Navbar} from'./Navbar'
 import {Footer} from './Footer'
 import {Home} from './home';
+import ForesitesDashboard from './ForesitesDashboard';
 import{AssignedJobs}from './AssignedJobs';
 import{AssignSnags}from './AssignSnags';
 import {Sitewisefb} from'./sites';
@@ -29,7 +30,7 @@ function App() {
           <Routes>
             <Route path="/" element={
               <ProtectedRoute requireAuth={true}>
-                <Home />
+                <ForesitesDashboard />
               </ProtectedRoute>
             } />
             <Route path="/allfeedbacks" element={

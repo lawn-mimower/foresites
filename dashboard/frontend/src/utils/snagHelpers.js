@@ -102,6 +102,14 @@ export function formatSnagId(id) {
   return `SNG-${String(id).padStart(4, '0')}`;
 }
 
+/** Time-of-day greeting */
+export function getGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
+}
+
 /** Compute the "worst" assignment status for a snag from its assignments array */
 export function deriveSnagDisplayStatus(snagStatus, assignments) {
   if (snagStatus === 'resolved') return 'closed';

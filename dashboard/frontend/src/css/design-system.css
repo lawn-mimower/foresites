@@ -77,6 +77,27 @@
   font-size: var(--font-size-xs);
 }
 
+/* ===== Button Spinner ===== */
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+.btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin .6s linear infinite;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.btn-spinner--sm {
+  width: 12px;
+  height: 12px;
+  border-width: 1.5px;
+}
+
 /* ===== Badges ===== */
 .fs-badge {
   display: inline-block;

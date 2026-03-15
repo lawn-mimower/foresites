@@ -331,7 +331,7 @@ export function ChatPanel() {
             onClick={handleSend}
             disabled={sending || !input.trim()}
           >
-            {sending ? "Sending..." : "Send"}
+            {sending ? <><span className="btn-spinner btn-spinner--sm" /> Sending</> : "Send"}
           </button>
         </div>
       </div>

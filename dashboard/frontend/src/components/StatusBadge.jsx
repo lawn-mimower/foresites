@@ -52,3 +52,9 @@ export function StatusBadge({ status, acknowledged_at }) {
 export function CategoryBadge({ category }) {
   return <CategoryTag category={category} />;
 }
+
+/** Revision tag — amber badge when rejection count > 0 */
+export function RevisionTag({ rejectionCount }) {
+  if (!rejectionCount) return null;
+  return <span className="tag tag-revision">Revision needed</span>;
+}

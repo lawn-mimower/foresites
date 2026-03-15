@@ -121,12 +121,26 @@ Router.put('/assignments/:assignmentId', authenticateToken, async (req, res) => 
       return res.status(404).json({ error: 'Assignment not found' });
     }
 
+    const { rejection_remarks } = req.body;
+
     const updateData = { status };
     if (notes) updateData.notes = notes;
     if (solution) updateData.solution = solution;
 
     if (status === 'resolved') {
       updateData.resolved_at = new Date().toISOString();
+    }
+
+    // Handle rejection flow: save remarks and increment rejection_count
+    if (rejection_remarks) {
+      updateData.rejection_remarks = rejection_remarks;
+      // Fetch current rejection_count so we can increment
+      const { data: current } = await supabase
+        .from('snag_assignment')
+        .select('rejection_count')
+        .eq('assignment_id', assignmentId)
+        .single();
+      updateData.rejection_count = ((current?.rejection_count) || 0) + 1;
     }
 
     // Update the assignment
@@ -363,6 +377,20 @@ Router.get('/users/all', authenticateToken, async (req, res) => {
     console.error('❌ Error fetching all users:', err);
     res.status(500).json({ error: 'Failed to fetch users' });
   }
+});
+
+// ✅ Notify stub (future: wire to WhatsApp Business API)
+Router.post('/notify', authenticateToken, async (req, res) => {
+  const { assignment_id, type } = req.body;
+  console.log(`📨 [STUB] Notification type="${type}" for assignment=${assignment_id}`);
+  res.json({ success: true, stub: true });
+});
+
+// ✅ Escalate stub (future: wire to WhatsApp Business API)
+Router.post('/escalate', authenticateToken, async (req, res) => {
+  const { assignment_id, escalation_remarks } = req.body;
+  console.log(`🚨 [STUB] Escalation for assignment=${assignment_id}: ${escalation_remarks}`);
+  res.json({ success: true, stub: true });
 });
 
 module.exports = Router;
