@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { showToast } from "./Toast";
@@ -6,16 +6,17 @@ import { StatusPill, CategoryTag, RevisionTag } from "./components/StatusBadge";
 import AssignModal from "./components/AssignModal";
 import {
   formatSnagId,
-  formatCategory,
   getCategoryVertical,
   getPriority,
   deriveSnagDisplayStatus,
   getGreeting,
 } from "./utils/snagHelpers";
 import { cachedFetch, invalidate } from "./utils/dataCache";
+import { useDataFreshness } from "./hooks/useDataFreshness";
 import "./css/dashboard.css";
 
-const API = "http://localhost:9999/api";
+import { API_BASE } from "./config/api";
+const API = API_BASE;
 
 /* ─── SVG ICONS ──────────────────────────────────────────── */
 const IconSearch = () => <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>;
@@ -225,6 +226,8 @@ export default function ForesitesDashboard() {
     }
   }, [apiCall, effectiveSiteId, user?.site_id]);
 
+  useDataFreshness(fetchData);
+
   useEffect(() => { fetchData(); }, [fetchData]);
 
   /* ── AI Search ── */
@@ -266,9 +269,7 @@ export default function ForesitesDashboard() {
       if (res && !res.error) {
         showToast("Snag raised successfully!", "success");
         setModalOpen(false);
-        invalidate('feedbacks');
-        invalidate('metrics');
-        invalidate('assignments');
+        invalidate(''); // bust all caches
         fetchData();
       } else {
         showToast(res?.error || "Failed to raise snag", "error");
@@ -533,7 +534,7 @@ export default function ForesitesDashboard() {
         onClose={() => setAssignModalSnag(null)}
         snagId={assignModalSnag?.id}
         siteId={assignModalSnag?.site_id || effectiveSiteId}
-        onAssigned={fetchData}
+        onAssigned={() => { invalidate(''); fetchData(); }}
       />
     </div>
   );

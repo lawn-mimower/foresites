@@ -24,9 +24,10 @@ const siteRoutes = require('./Routes/sites');
 const employeeRoutes = require('./Routes/employee');
 const reportRoutes=require('./Routes/reportRoutes');
 const chatRoutes = require('./Routes/chatRoutes');
+const impactMappingRoutes = require('./Routes/impactMapping');
 
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173","*"],
+  origin: (origin, callback) => callback(null, true),
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
@@ -75,6 +76,7 @@ app.use('/api/sites', siteRoutes);
 app.use('/api/report',reportRoutes);
 app.use('/api/employee', employeeRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/impact-mapping', impactMappingRoutes);
 
 app.get('/testpath', (req, res) => {
   res.send(path.join(__dirname, '..', 'uploads'));
@@ -86,4 +88,4 @@ console.log('✅ Backend ready - Using Supabase for database operations');
 // 🔐 Initialize superadmin on startup
 createSuperAdmin();
 
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on http://0.0.0.0:${PORT}`));

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
+import { API_BASE } from "./config/api";
 import './css/sites.css'
 import { showToast } from "./Toast";
 
@@ -8,7 +9,7 @@ export function Sitewisefb() {
   const [loading, setLoading] = useState(true);
   const { apiCall } = useAuth();
   const [error, setError] = useState("");
-  const API = "http://localhost:9999/api/sites";
+  const API = `${API_BASE}/sites`;
 
   const refreshSites = async () => {
     setLoading(true);

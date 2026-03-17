@@ -3,25 +3,30 @@ import ActionModal from './ActionModal';
 import { useAuth } from '../AuthContext';
 import { showToast } from '../Toast';
 
-const API = 'http://localhost:9999/api';
+import { API_BASE } from '../config/api';
+const API = API_BASE;
 
-export default function AssignModal({ isOpen, onClose, snagId, siteId, onAssigned }) {
+export default function AssignModal({ isOpen, onClose, snagId, siteId, onAssigned, currentAssignment }) {
   const { apiCall } = useAuth();
   const [users, setUsers] = useState([]);
   const [selectedUser, setSelectedUser] = useState('');
   const [remarks, setRemarks] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [priority, setPriority] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (!isOpen || !siteId) return;
+    // Pre-fill priority from previous assignment on reassignment
+    if (currentAssignment?.priority) {
+      setPriority(currentAssignment.priority);
+    }
     (async () => {
       try {
         const data = await apiCall(`${API}/snag-assignments/site/${siteId}/users`);
         if (Array.isArray(data)) setUsers(data);
       } catch { setUsers([]); }
     })();
-  }, [isOpen, siteId, apiCall]);
+  }, [isOpen, siteId, apiCall, currentAssignment]);
 
   const handleSubmit = async () => {
     if (!selectedUser) { showToast('Please select a team member', 'warning'); return; }
@@ -33,7 +38,7 @@ export default function AssignModal({ isOpen, onClose, snagId, siteId, onAssigne
         assigned_user_id: selectedUser,
         assigner_remarks: remarks,
       };
-      if (dueDate) body.due_date = new Date(dueDate).toISOString();
+      if (priority) body.priority = priority;
 
       const res = await apiCall(`${API}/snag-assignments/assignments`, {
         method: 'POST',
@@ -58,7 +63,7 @@ export default function AssignModal({ isOpen, onClose, snagId, siteId, onAssigne
   const handleClose = () => {
     setSelectedUser('');
     setRemarks('');
-    setDueDate('');
+    setPriority('');
     onClose();
   };
 
@@ -82,16 +87,22 @@ export default function AssignModal({ isOpen, onClose, snagId, siteId, onAssigne
         </select>
       </div>
       <div className="action-modal-field">
+        <label>Priority</label>
+        <select value={priority} onChange={(e) => setPriority(e.target.value)}>
+          <option value="">— Select priority —</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+      </div>
+      <div className="action-modal-field">
         <label>Remarks</label>
         <textarea
           value={remarks}
           onChange={(e) => setRemarks(e.target.value)}
           placeholder="Instructions or context for the assignee..."
         />
-      </div>
-      <div className="action-modal-field">
-        <label>Due Date</label>
-        <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
       </div>
     </ActionModal>
   );

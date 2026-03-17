@@ -1,28 +1,74 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { showToast } from "./Toast";
-import { getPriority, formatCategory, formatSnagId, getAssignmentDisplayStatus, getStatusLabel } from "./utils/snagHelpers";
-import { StatusPill, PriorityBadge, CategoryTag } from "./components/StatusBadge";
+import { API_BASE } from "./config/api";
+import { getAssignmentDisplayStatus } from "./utils/snagHelpers";
+import AssigneeCard from "./components/AssigneeCard";
+import AssignerCard from "./components/AssignerCard";
+import AssignModal from "./components/AssignModal";
+import RejectModal from "./components/RejectModal";
+import EscalateModal from "./components/EscalateModal";
+import ReassignConfirmModal from "./components/ReassignConfirmModal";
+import { Lightbox } from "./components/Lightbox";
+import { deriveSnagDisplayStatus } from "./utils/snagHelpers";
+import { cachedFetch, invalidate } from "./utils/dataCache";
+import { useDataFreshness } from "./hooks/useDataFreshness";
 import "./css/allfb.css";
 
 export function AssignedJobs() {
   const [jobs, setJobs] = useState([]);
+  const [assignedByMe, setAssignedByMe] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState("all");
   const [solutionInputs, setSolutionInputs] = useState({});
-  const { apiCall } = useAuth();
+  const [proofFiles, setProofFiles] = useState({});
+  const [proofPreviews, setProofPreviews] = useState({});
+  const [uploadingProof, setUploadingProof] = useState({});
+  const { apiCall, isAdmin } = useAuth();
+  const [activeTab, setActiveTab] = useState(isAdmin() ? "assigned-by-me" : "my-jobs");
+  const [searchParams] = useSearchParams();
+  const highlightId = searchParams.get('highlight');
+  const scrolledRef = useRef(false);
 
-  const API = "http://localhost:9999/api";
+  // Action modals (for "Jobs I Assigned" tab)
+  const [assignModalSnag, setAssignModalSnag] = useState(null);
+  const [rejectModalAssignment, setRejectModalAssignment] = useState(null);
+  const [escalateModalAssignment, setEscalateModalAssignment] = useState(null);
+  const [reassignConfirm, setReassignConfirm] = useState(null);
+  const [lightboxImage, setLightboxImage] = useState(null);
+
+  const API = API_BASE;
+
+  const onRefreshForFreshness = useCallback(() => {
+    fetchAssignedJobs(true);
+    if (isAdmin()) fetchAssignedByMe(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiCall]);
+  useDataFreshness(onRefreshForFreshness);
 
   useEffect(() => {
     fetchAssignedJobs();
+    if (isAdmin()) fetchAssignedByMe();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiCall]);
 
-  const fetchAssignedJobs = async () => {
+  useEffect(() => {
+    if (!highlightId || jobs.length === 0 || scrolledRef.current) return;
+    const el = document.getElementById(`job-card-${highlightId}`);
+    if (el) {
+      scrolledRef.current = true;
+      setTimeout(() => {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 300);
+    }
+  }, [highlightId, jobs]);
+
+  const fetchAssignedJobs = async (bustCache = false) => {
     setLoading(true);
     try {
-      const data = await apiCall(`${API}/snag-assignments/user/assigned-jobs`);
+      if (bustCache) invalidate('myJobs');
+      const data = await cachedFetch('myJobs', () => apiCall(`${API}/snag-assignments/user/assigned-jobs`));
       if (!data || data.error) {
         setJobs([]);
         showToast("Failed to load assigned jobs", "error");
@@ -38,9 +84,95 @@ export function AssignedJobs() {
     }
   };
 
-  const updateJobStatus = async (assignmentId, newStatus, solution) => {
+  const fetchAssignedByMe = async (bustCache = false) => {
     try {
-      const body = { status: newStatus };
+      if (bustCache) invalidate('assignedByMe');
+      const data = await cachedFetch('assignedByMe', () => apiCall(`${API}/snag-assignments/assignments/assigned-by-me`));
+      if (!data || data.error) {
+        setAssignedByMe([]);
+        return;
+      }
+      setAssignedByMe(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Error fetching assigned-by-me:", err);
+      setAssignedByMe([]);
+    }
+  };
+
+  const updateDueDate = async (assignmentId, dueDate) => {
+    try {
+      const response = await apiCall(
+        `${API}/snag-assignments/assignments/${assignmentId}`,
+        { method: "PUT", body: JSON.stringify({ due_date: dueDate ? new Date(dueDate).toISOString() : null }) }
+      );
+      if (response && !response.error) {
+        invalidate(''); // bust all caches
+        setJobs((prev) =>
+          prev.map((job) =>
+            job.assignment_id === assignmentId ? { ...job, due_date: dueDate || null } : job
+          )
+        );
+        showToast("Due date set", "success");
+      }
+    } catch (err) {
+      showToast("Failed to update due date", "error");
+    }
+  };
+
+  const handleProofFileChange = (assignmentId, file) => {
+    if (!file) return;
+    setProofFiles(prev => ({ ...prev, [assignmentId]: file }));
+    const url = URL.createObjectURL(file);
+    setProofPreviews(prev => ({ ...prev, [assignmentId]: url }));
+  };
+
+  const uploadProof = async (assignmentId) => {
+    const file = proofFiles[assignmentId];
+    if (!file) return;
+
+    setUploadingProof(prev => ({ ...prev, [assignmentId]: true }));
+    try {
+      const formData = new FormData();
+      formData.append('proof', file);
+
+      const token = localStorage.getItem('authToken');
+      const res = await fetch(`${API}/snag-assignments/assignments/${assignmentId}/upload-proof`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (res.ok && data.s3Key) {
+        invalidate(''); // bust all caches so assigner's view updates
+        setJobs(prev => prev.map(job =>
+          job.assignment_id === assignmentId ? { ...job, proof: data.s3Key, status: 'in_review' } : job
+        ));
+        setProofFiles(prev => { const n = { ...prev }; delete n[assignmentId]; return n; });
+        setProofPreviews(prev => { const n = { ...prev }; delete n[assignmentId]; return n; });
+        showToast("Proof uploaded", "success");
+      } else {
+        showToast(data.error || "Failed to upload proof", "error");
+      }
+    } catch (err) {
+      showToast("Error uploading proof", "error");
+    } finally {
+      setUploadingProof(prev => ({ ...prev, [assignmentId]: false }));
+    }
+  };
+
+  const handleSubmitForReview = async (assignmentId) => {
+    const solution = solutionInputs[assignmentId];
+    setUploadingProof(prev => ({ ...prev, [assignmentId]: true }));
+
+    try {
+      // Upload proof first if present
+      if (proofFiles[assignmentId]) {
+        await uploadProof(assignmentId);
+      }
+
+      // Update status to in_review with solution
+      const body = { status: 'in_review' };
       if (solution) body.solution = solution;
 
       const response = await apiCall(
@@ -49,40 +181,24 @@ export function AssignedJobs() {
       );
 
       if (response && !response.error) {
+        invalidate(''); // bust all caches so assigner's view updates
         setJobs((prev) =>
           prev.map((job) =>
             job.assignment_id === assignmentId
-              ? {
-                  ...job,
-                  status: newStatus,
-                  solution: solution || job.solution,
-                  resolved_at: newStatus === "resolved" ? new Date().toISOString() : null,
-                }
+              ? { ...job, status: 'in_review', solution: solution || job.solution }
               : job
           )
         );
-        showToast(`Job status updated to ${getStatusLabel(getAssignmentDisplayStatus(newStatus))}`, "success");
+        showToast("Submitted for review", "success");
       }
     } catch (err) {
-      console.error("Error updating job:", err);
-      showToast("Error updating job status", "error");
+      showToast("Error submitting for review", "error");
+    } finally {
+      setUploadingProof(prev => ({ ...prev, [assignmentId]: false }));
     }
   };
 
-  const filteredJobs = () => {
-    if (filter === "resolved") return jobs.filter((job) => job.status === "resolved");
-    if (filter === "open") return jobs.filter((job) => job.status === "open");
-    if (filter === "in_progress") return jobs.filter((job) => job.status === "in_progress");
-    if (filter === "in_review") return jobs.filter((job) => job.status === "in_review");
-    return jobs;
-  };
-
-  const total = jobs.length;
-  const resolved = jobs.filter((job) => job.status === "resolved").length;
-  const openCount = jobs.filter((job) => job.status === "open").length;
-  const inProgressCount = jobs.filter((job) => job.status === "in_progress").length;
-  const displayJobs = filteredJobs();
-
+  // ── Helpers for AssignerCard in "Jobs I Assigned" tab ──
   const getDueClass = (dueDate) => {
     if (!dueDate) return 'due-ok';
     const today = new Date().toISOString().split('T')[0];
@@ -92,24 +208,117 @@ export function AssignedJobs() {
     return 'due-ok';
   };
 
+  const formatDue = (dueDate) => {
+    if (!dueDate) return '—';
+    return new Date(dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  const toggleTodo = async (snagId, currentStatus) => {
+    try {
+      const newStatus = currentStatus === 'resolved' ? 'pending' : 'resolved';
+      const response = await apiCall(`${API}/dashboard/feedbacks/${snagId}/resolve`, {
+        method: "PUT",
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (response && response.updated) {
+        showToast(newStatus === 'resolved' ? "Marked as resolved" : "Reopened", "success");
+        invalidate(''); // bust all caches so Dashboard + All Snags stay in sync
+        fetchAssignedByMe(true);
+
+        // Send WhatsApp approval notification on close
+        if (newStatus === 'resolved') {
+          const job = assignedByMe.find(j => j.snag_id === snagId);
+          if (job?.assignment_id) {
+            apiCall(`${API}/snag-assignments/notify`, {
+              method: 'POST',
+              body: JSON.stringify({ assignment_id: job.assignment_id, type: 'approve' }),
+            }).catch(() => {});
+          }
+        }
+      }
+    } catch (err) { showToast("Failed to update status", "error"); }
+  };
+
+  const handleReassignClick = (snagData, assignment) => {
+    setReassignConfirm({ snag: snagData, assignment });
+  };
+
+  const handleReassignConfirmed = () => {
+    const { snag, assignment } = reassignConfirm;
+    setReassignConfirm(null);
+    setAssignModalSnag({
+      id: snag.id,
+      site_id: snag.site_id,
+      currentAssignment: assignment,
+    });
+  };
+
+  // ── Filtering ──
+  const filteredJobs = () => {
+    const source = activeTab === "my-jobs" ? jobs : assignedByMe;
+    if (filter === "resolved") return source.filter((job) => job.status === "resolved");
+    if (filter === "open") return source.filter((job) => job.status === "open");
+    if (filter === "in_progress") return source.filter((job) => job.status === "in_progress");
+    if (filter === "in_review") return source.filter((job) => job.status === "in_review");
+    return source;
+  };
+
+  const currentSource = activeTab === "my-jobs" ? jobs : assignedByMe;
+  const total = currentSource.length;
+  const resolved = currentSource.filter((job) => job.status === "resolved").length;
+  const openCount = currentSource.filter((job) => job.status === "open").length;
+  const inProgressCount = currentSource.filter((job) => job.status === "in_progress").length;
+  const inReviewCount = currentSource.filter((job) => job.status === "in_review").length;
+  const displayJobs = filteredJobs();
+
   return (
     <div className="all-snags-page">
+      {lightboxImage && <Lightbox src={lightboxImage} onClose={() => setLightboxImage(null)} />}
+
       {/* Page Header */}
       <div className="page-header">
         <div className="page-title-block">
-          <div className="page-eyebrow">Your assignments</div>
-          <div className="page-title">Assigned <span>Jobs</span></div>
+          <div className="page-eyebrow">{activeTab === "my-jobs" ? "Your assignments" : "Assignments you created"}</div>
+          <div className="page-title">Job <span>Zone</span></div>
           <div className="page-meta">
-            {total} total &middot; {openCount} open &middot; {inProgressCount} in progress &middot; {resolved} resolved
+            {total} total &middot; {openCount} open &middot; {inProgressCount} in progress &middot; {inReviewCount} in review &middot; {resolved} resolved
           </div>
         </div>
         <div className="page-header-right">
-          <button className="footer-btn" onClick={fetchAssignedJobs} disabled={loading} style={{ padding: '8px 16px', fontSize: '12px' }}>
+          <button className="footer-btn" onClick={() => { fetchAssignedJobs(true); if (isAdmin()) fetchAssignedByMe(true); }} disabled={loading} style={{ padding: '8px 16px', fontSize: '12px' }}>
             <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
-            {loading ? "Loading…" : "Refresh"}
+            {loading ? "Loading\u2026" : "Refresh"}
           </button>
         </div>
       </div>
+
+      {/* Tab Bar */}
+      {isAdmin() && (
+        <div className="filter-bar" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>
+          <button
+            className="footer-btn"
+            onClick={() => { setActiveTab("my-jobs"); setFilter("all"); }}
+            style={{
+              background: activeTab === "my-jobs" ? 'var(--brand-black)' : 'var(--brand-white)',
+              color: activeTab === "my-jobs" ? 'var(--brand-white)' : 'var(--ink-800)',
+              borderColor: activeTab === "my-jobs" ? 'var(--brand-black)' : 'var(--rule)',
+            }}
+          >
+            My Jobs
+          </button>
+          <button
+            className="footer-btn"
+            onClick={() => { setActiveTab("assigned-by-me"); setFilter("all"); }}
+            style={{
+              background: activeTab === "assigned-by-me" ? 'var(--brand-black)' : 'var(--brand-white)',
+              color: activeTab === "assigned-by-me" ? 'var(--brand-white)' : 'var(--ink-800)',
+              borderColor: activeTab === "assigned-by-me" ? 'var(--brand-black)' : 'var(--rule)',
+            }}
+          >
+            Jobs I Assigned
+          </button>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="filter-bar">
@@ -118,11 +327,12 @@ export function AssignedJobs() {
           { key: "all", label: `All (${total})` },
           { key: "open", label: `Open (${openCount})` },
           { key: "in_progress", label: `In Progress (${inProgressCount})` },
+          { key: "in_review", label: `In Review (${inReviewCount})` },
           { key: "resolved", label: `Resolved (${resolved})` },
         ].map(f => (
           <button
             key={f.key}
-            className={`footer-btn${filter === f.key ? '' : ''}`}
+            className="footer-btn"
             onClick={() => setFilter(f.key)}
             style={{
               background: filter === f.key ? 'var(--brand-black)' : 'var(--brand-white)',
@@ -140,7 +350,7 @@ export function AssignedJobs() {
       <div className="cards-grid" style={{ gridTemplateColumns: '1fr' }}>
         {loading && (
           <div className="empty-state">
-            <div className="empty-state-title">Loading…</div>
+            <div className="empty-state-title">Loading\u2026</div>
           </div>
         )}
 
@@ -150,151 +360,123 @@ export function AssignedJobs() {
             <div className="empty-state-title">
               {filter === "all" ? "No assigned jobs yet" : `No ${filter.replace('_', ' ')} jobs`}
             </div>
-            <div className="empty-state-sub">Jobs assigned to you will appear here</div>
+            <div className="empty-state-sub">
+              {activeTab === "my-jobs" ? "Jobs assigned to you will appear here" : "Jobs you've assigned to others will appear here"}
+            </div>
           </div>
         )}
 
         {!loading && displayJobs.map((job) => {
-          const priority = job.snag?.category ? getPriority(job.snag.category) : "low";
           const displayStatus = getAssignmentDisplayStatus(job.status);
-          const snagId = formatSnagId(job.snag_id);
+          const isHighlighted = highlightId === job.assignment_id;
+
+          if (activeTab === "my-jobs") {
+            // AssigneeCard for "My Jobs"
+            return (
+              <AssigneeCard
+                key={job.assignment_id}
+                job={job}
+                displayStatus={displayStatus}
+                solutionText={solutionInputs[job.assignment_id] || ''}
+                proofPreview={proofPreviews[job.assignment_id]}
+                proofFileName={proofFiles[job.assignment_id]?.name}
+                onSolutionChange={(text) => setSolutionInputs(prev => ({ ...prev, [job.assignment_id]: text }))}
+                onProofChange={(file) => handleProofFileChange(job.assignment_id, file)}
+                onSetDueDate={(assignmentId, date) => updateDueDate(assignmentId, date)}
+                onSubmitProof={(assignmentId) => handleSubmitForReview(assignmentId)}
+                isHighlighted={isHighlighted}
+                uploadingProof={!!uploadingProof[job.assignment_id]}
+                apiCall={apiCall}
+                apiBase={API}
+              />
+            );
+          }
+
+          // AssignerCard for "Jobs I Assigned"
+          // Build a snag-like object from the joined data
+          const snagData = {
+            id: job.snag_id,
+            feedback: job.snag?.feedback,
+            feedback_type: job.snag?.feedback_type,
+            category: job.snag?.category,
+            image_url: job.snag?.image_url,
+            transcription: job.snag?.transcription,
+            voice_url: null,
+            site: job.site,
+            site_id: job.site_id,
+            reporter_name: job.site?.site_manager || '—',
+            created_at: job.assigned_at,
+            status: job.snag?.status || 'pending',
+            suggestion: null,
+          };
+
+          const assignmentData = {
+            assignment_id: job.assignment_id,
+            username: job.assigned_username || 'Unknown',
+            role: job.assigned_role || '',
+            status: job.status,
+            assigner_remarks: job.assigner_remarks || '',
+            solution: job.solution || '',
+            proof: job.proof || null,
+            due_date: job.due_date || null,
+            priority: job.priority || null,
+            rejection_count: job.rejection_count || 0,
+            rejection_remarks: job.rejection_remarks || '',
+          };
+
+          const snagDisplayStatus = deriveSnagDisplayStatus(snagData.status, [assignmentData]);
 
           return (
-            <div key={job.assignment_id} className={`snag-card priority-${priority}`}>
-              <div className="card-accent" />
-
-              <div className="card-header">
-                <div className="card-header-left">
-                  <div className="card-snag-id">
-                    <span className="id-num">{snagId}</span>
-                    {job.snag?.category && <CategoryTag category={job.snag.category} />}
-                  </div>
-                  <div className="card-title">{job.snag?.feedback || "Assigned Job"}</div>
-                  <div className="card-meta-row">
-                    <PriorityBadge category={job.snag?.category} />
-                    <span className="meta-dot">&middot;</span>
-                    <span style={{ fontSize: '11px', color: 'var(--ink-400)' }}>{job.site?.site_name || '—'}</span>
-                    <span className="meta-dot">&middot;</span>
-                    <span style={{ fontSize: '11px', color: 'var(--ink-400)' }}>{job.site?.site_manager || '—'}</span>
-                  </div>
-                </div>
-                <div className="card-header-right">
-                  <StatusPill displayStatus={displayStatus} />
-                </div>
-              </div>
-
-              <div className="card-body">
-                {/* Assignment details */}
-                <div className="card-section">
-                  <div className="section-content open" style={{ paddingTop: '14px' }}>
-                    <div className="snag-detail-grid">
-                      <div>
-                        <div className="detail-label">Site</div>
-                        <div className="detail-value">{job.site?.site_name || '—'}</div>
-                      </div>
-                      <div>
-                        <div className="detail-label">Manager</div>
-                        <div className="detail-value">{job.site?.site_manager || '—'}</div>
-                      </div>
-                      <div>
-                        <div className="detail-label">Assigned</div>
-                        <div className="detail-value mono">{new Date(job.assigned_at).toLocaleDateString('en-GB')}</div>
-                      </div>
-                      {job.due_date && (
-                        <div>
-                          <div className="detail-label">Due Date</div>
-                          <div className={`detail-value mono ${getDueClass(job.due_date)}`}>
-                            {new Date(job.due_date).toLocaleDateString('en-GB')}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {(job.assigner_remarks || job.description) && (
-                      <div className="suggestion-box" style={{ marginTop: '8px' }}>
-                        <div className="suggestion-header">
-                          <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/></svg>
-                          <span className="suggestion-header-label">Assignment Notes</span>
-                        </div>
-                        <div className="suggestion-text">{job.assigner_remarks || job.description}</div>
-                      </div>
-                    )}
-
-                    {job.snag?.image_url && (
-                      <div className="snag-image-thumb" onClick={() => window.open(job.snag.image_url, "_blank")} style={{ marginTop: '8px' }}>
-                        <img src={job.snag.image_url} alt="Snag attachment" />
-                        <span className="image-expand-hint">View full</span>
-                      </div>
-                    )}
-
-                    {job.snag?.transcription && (
-                      <div className="transcription-box" style={{ marginTop: '8px' }}>{job.snag.transcription}</div>
-                    )}
-
-                    {/* Solution input for in_progress jobs */}
-                    {(job.status === 'in_progress' || job.status === 'open') && (
-                      <div style={{ marginTop: '10px' }}>
-                        <textarea
-                          className="assign-notes-input"
-                          placeholder="Describe the solution implemented…"
-                          value={solutionInputs[job.assignment_id] || ""}
-                          onChange={(e) => setSolutionInputs({ ...solutionInputs, [job.assignment_id]: e.target.value })}
-                          rows="2"
-                        />
-                      </div>
-                    )}
-
-                    {job.solution && (
-                      <div className="solution-box" style={{ marginTop: '8px' }}>
-                        <div className="solution-header">
-                          <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-                          <span className="solution-header-label">Solution Filed</span>
-                        </div>
-                        <div className="solution-text">{job.solution}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="card-footer">
-                <div className="card-footer-meta">
-                  <span className="footer-meta-item">
-                    <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
-                    Assigned <strong>{new Date(job.assigned_at).toLocaleDateString('en-GB')}</strong>
-                  </span>
-                  {job.resolved_at && (
-                    <span className="footer-meta-item">
-                      Resolved <strong>{new Date(job.resolved_at).toLocaleDateString('en-GB')}</strong>
-                    </span>
-                  )}
-                </div>
-                <div className="card-footer-actions">
-                  {job.status === 'open' && (
-                    <button className="footer-btn" onClick={() => updateJobStatus(job.assignment_id, 'in_progress')}>
-                      Start Work
-                    </button>
-                  )}
-                  {job.status === 'in_progress' && (
-                    <button
-                      className="footer-btn close-btn"
-                      onClick={() => updateJobStatus(job.assignment_id, 'in_review', solutionInputs[job.assignment_id])}
-                    >
-                      <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-                      Submit for Review
-                    </button>
-                  )}
-                  {job.status === 'resolved' && (
-                    <span style={{ fontSize: '11px', color: 'var(--green)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-                      Completed
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
+            <AssignerCard
+              key={job.assignment_id}
+              snag={snagData}
+              assignment={assignmentData}
+              displayStatus={snagDisplayStatus}
+              onImageClick={setLightboxImage}
+              onAssign={() => setAssignModalSnag({ id: job.snag_id, site_id: job.site_id })}
+              onReassign={() => handleReassignClick(snagData, assignmentData)}
+              onReject={() => setRejectModalAssignment(job.assignment_id)}
+              onEscalate={() => setEscalateModalAssignment(job.assignment_id)}
+              onClose={() => toggleTodo(job.snag_id, snagData.status)}
+              isAdmin={true}
+              isHighlighted={isHighlighted}
+              viewMode="grid"
+              getDueClass={getDueClass}
+              formatDue={formatDue}
+              apiCall={apiCall}
+              apiBase={API}
+            />
           );
         })}
       </div>
+
+      {/* Action Modals (for Jobs I Assigned tab) */}
+      <AssignModal
+        isOpen={!!assignModalSnag}
+        onClose={() => setAssignModalSnag(null)}
+        snagId={assignModalSnag?.id}
+        siteId={assignModalSnag?.site_id}
+        currentAssignment={assignModalSnag?.currentAssignment}
+        onAssigned={() => { invalidate(''); fetchAssignedByMe(true); fetchAssignedJobs(true); setAssignModalSnag(null); }}
+      />
+      <RejectModal
+        isOpen={!!rejectModalAssignment}
+        onClose={() => setRejectModalAssignment(null)}
+        assignmentId={rejectModalAssignment}
+        onRejected={() => { invalidate(''); fetchAssignedByMe(true); setRejectModalAssignment(null); }}
+      />
+      <EscalateModal
+        isOpen={!!escalateModalAssignment}
+        onClose={() => setEscalateModalAssignment(null)}
+        assignmentId={escalateModalAssignment}
+        onEscalated={() => { invalidate(''); fetchAssignedByMe(true); setEscalateModalAssignment(null); }}
+      />
+      <ReassignConfirmModal
+        isOpen={!!reassignConfirm}
+        onClose={() => setReassignConfirm(null)}
+        currentAssigneeName={reassignConfirm?.assignment?.username}
+        onConfirm={handleReassignConfirmed}
+      />
     </div>
   );
 }

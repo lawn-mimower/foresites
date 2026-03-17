@@ -1,10 +1,19 @@
 /**
- * Derive priority from category.
- * safety_compliance → critical, design_conflicts/resource_blockers → high,
- * workflow_issues → medium, everything else → low
+ * Dynamic impact map — populated from DB via setImpactMap().
+ * Falls back to hardcoded logic on first render before fetch completes.
  */
-export function getPriority(category) {
+let _impactMap = null;
+export function setImpactMap(map) { _impactMap = map; }
+
+/**
+ * Derive impact from category (renamed from "priority").
+ * Impact = how bad the snag is for the project (auto-derived from category).
+ * Uses DB-backed mapping if loaded, otherwise falls back to hardcoded defaults.
+ */
+export function getImpact(category) {
   if (!category) return 'low';
+  if (_impactMap && _impactMap[category]) return _impactMap[category];
+  // Hardcoded fallback for first render / before DB mapping loads
   const c = category.toLowerCase();
   if (c.includes('safety')) return 'critical';
   if (c.includes('design') || c.includes('resource')) return 'high';
@@ -34,6 +43,7 @@ export function getAssignmentDisplayStatus(assignmentStatus) {
     in_progress: 'in_progress',
     in_review: 'in_review',
     resolved: 'closed',
+    rejected: 'in_progress',
   };
   return map[assignmentStatus] || 'open';
 }
@@ -54,10 +64,13 @@ export function getStatusBadgeClass(status) {
   return status || 'open';
 }
 
-/** CSS class suffix for priority badge */
-export function getPriorityBadgeClass(category) {
-  return getPriority(category);
+/** CSS class suffix for impact badge */
+export function getImpactBadgeClass(category) {
+  return getImpact(category);
 }
+
+// Backward compat alias
+export const getPriorityBadgeClass = getImpactBadgeClass;
 
 /** Human-readable category */
 export function formatCategory(category) {
@@ -78,9 +91,9 @@ export function getCategoryVertical(category) {
   return 'other';
 }
 
-/** Priority colors for inline use */
-export function getPriorityColor(category) {
-  const p = getPriority(category);
+/** Impact colors for inline use */
+export function getImpactColor(category) {
+  const p = getImpact(category);
   const map = {
     critical: 'var(--brand-red)',
     high: 'var(--amber)',
@@ -110,14 +123,28 @@ export function getGreeting() {
   return 'Good evening';
 }
 
+// Backward compat aliases
+export const getPriority = getImpact;
+export const getPriorityColor = getImpactColor;
+
+/**
+ * Format assigner-set priority (Low/Medium/High/Urgent).
+ * This is DIFFERENT from impact — priority = how urgently the assigner wants it fixed.
+ */
+export function formatAssignmentPriority(priority) {
+  if (!priority) return null;
+  const map = { low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' };
+  return map[priority.toLowerCase()] || priority;
+}
+
 /** Compute the "worst" assignment status for a snag from its assignments array */
 export function deriveSnagDisplayStatus(snagStatus, assignments) {
   if (snagStatus === 'resolved') return 'closed';
   if (!assignments || assignments.length === 0) return 'open';
-  // Priority: in_review > in_progress > open
+  // Priority: in_review > in_progress/rejected > open
   const statuses = assignments.map(a => a.status);
   if (statuses.includes('in_review')) return 'in_review';
-  if (statuses.includes('in_progress')) return 'in_progress';
+  if (statuses.includes('in_progress') || statuses.includes('rejected')) return 'in_progress';
   if (statuses.some(s => s !== 'open')) return 'in_progress';
   return 'open';
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { showToast } from "./Toast";
 import { useAuth } from "./AuthContext";
+import { API_BASE } from "./config/api";
 import "./css/addform.css";
 
 export function Addform() {
@@ -13,7 +14,7 @@ export function Addform() {
 
   const { apiCall, isSuperAdminOrSrEngineer } = useAuth();
 
-  const API = "http://localhost:9999/api/sites";
+  const API = `${API_BASE}/sites`;
   const canManageAccessPoints = isSuperAdminOrSrEngineer();
 
   // 🔄 Refresher

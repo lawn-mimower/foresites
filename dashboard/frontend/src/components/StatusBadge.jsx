@@ -1,5 +1,5 @@
 import React from 'react';
-import { getPriority, getStatusLabel, getCategoryVertical, formatCategory } from '../utils/snagHelpers';
+import { getImpact, getStatusLabel, getCategoryVertical, formatCategory, formatAssignmentPriority } from '../utils/snagHelpers';
 
 /** Status pill with colored dot — matches reference .status-pill */
 export function StatusPill({ displayStatus }) {
@@ -19,13 +19,34 @@ export function StatusPill({ displayStatus }) {
   );
 }
 
-/** Priority badge with triangle icon — matches reference .prio-badge */
-export function PriorityBadge({ category }) {
-  const priority = getPriority(category);
+/** Impact badge (renamed from PriorityBadge) — auto-derived from category */
+export function ImpactBadge({ category }) {
+  const impact = getImpact(category);
   return (
-    <span className={`prio-badge prio-${priority}`}>
+    <span className={`prio-badge prio-${impact}`}>
       <svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
-      {priority.toUpperCase()}
+      {impact.toUpperCase()}
+    </span>
+  );
+}
+
+/** Backward compat alias */
+export const PriorityBadge = ImpactBadge;
+
+/** Assignment priority badge — set by assigner (low/medium/high/urgent) */
+export function AssignmentPriorityBadge({ priority }) {
+  if (!priority) return null;
+  const label = formatAssignmentPriority(priority);
+  const colorMap = {
+    low: 'var(--blue, #3498db)',
+    medium: 'var(--ink-600, #666)',
+    high: 'var(--amber, #f39c12)',
+    urgent: 'var(--brand-red, #e74c3c)',
+  };
+  const color = colorMap[priority.toLowerCase()] || 'var(--ink-400)';
+  return (
+    <span className="assignment-priority-badge" style={{ color, borderColor: color, fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', padding: '1px 6px', border: '1px solid', borderRadius: '4px' }}>
+      {label}
     </span>
   );
 }

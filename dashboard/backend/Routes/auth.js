@@ -119,7 +119,7 @@ const requireAdmin = requireSuperAdminLevel;
 // Register new user (super admin level only)
 router.post('/register', authenticateToken, requireSuperAdminLevel, async (req, res) => {
   try {
-    const { username, email, password, role = 'Jr. engineer', department, designation, site_id } = req.body;
+    const { username, email, password, role = 'Jr. engineer', department, designation, site_id, phone_number } = req.body;
 
     // Validation
     if (!username || !email || !password) {
@@ -155,7 +155,8 @@ router.post('/register', authenticateToken, requireSuperAdminLevel, async (req, 
           role,
           department,
           designation,
-          site_id: site_id && site_id.trim() ? site_id : null  // Convert empty string to null
+          site_id: site_id && site_id.trim() ? site_id : null,  // Convert empty string to null
+          phone_number: phone_number && phone_number.trim() ? phone_number.trim() : null
         }
       ])
       .select()
@@ -383,7 +384,7 @@ router.get('/users', authenticateToken, requireSuperAdminLevel, async (req, res)
   try {
     const { data: users, error } = await supabase
       .from('website_user')
-      .select('user_id, username, email, role, department, designation, site_id, created_at')
+      .select('user_id, username, email, role, department, designation, site_id, phone_number, created_at')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -434,13 +435,14 @@ router.put('/users/:userId/status', authenticateToken, requireAdmin, async (req,
 // Update user (super admin level - update role, department, designation, site_id, password)
 router.put('/users/:userId', authenticateToken, requireSuperAdminLevel, async (req, res) => {
   try {
-    const { role, department, designation, site_id, password } = req.body;
+    const { role, department, designation, site_id, password, phone_number } = req.body;
 
     const updateData = {};
     if (role) updateData.role = role;
     if (department !== undefined) updateData.department = department;
     if (designation !== undefined) updateData.designation = designation;
     if (site_id !== undefined) updateData.site_id = site_id;
+    if (phone_number !== undefined) updateData.phone_number = phone_number && phone_number.trim() ? phone_number.trim() : null;
     
     // Update password if provided
     if (password && password.length >= 6) {

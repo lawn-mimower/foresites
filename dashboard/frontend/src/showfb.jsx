@@ -1,28 +1,23 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useLocation } from "react-router-dom";
 import { showToast } from "./Toast";
 import { useAuth } from "./AuthContext";
-import { CollapsibleSection } from "./components/CollapsibleSection";
+import { API_BASE, BASE_URL } from "./config/api";
 import { Lightbox } from "./components/Lightbox";
-import { StatusPill, PriorityBadge, CategoryTag, RevisionTag } from "./components/StatusBadge";
+import AssignerCard from "./components/AssignerCard";
 import AssignModal from "./components/AssignModal";
 import RejectModal from "./components/RejectModal";
 import EscalateModal from "./components/EscalateModal";
+import ReassignConfirmModal from "./components/ReassignConfirmModal";
+// StatusBadge components are used internally by AssignerCard
 import {
-  getPriority,
-  formatSnagId,
-  getCategoryVertical,
+  getImpact,
   formatCategory,
   deriveSnagDisplayStatus,
 } from "./utils/snagHelpers";
 import { cachedFetch, invalidate } from "./utils/dataCache";
+import { useDataFreshness } from "./hooks/useDataFreshness";
 import "./css/allfb.css";
-
-// SVG icon strings for collapsible section headers
-const ICON_DETAIL = '<svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4l5 2.18V11c0 3.5-2.33 6.79-5 7.93-2.67-1.14-5-4.43-5-7.93V7.18L12 5z"/></svg>';
-const ICON_AUDIO = '<svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:currentColor"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>';
-const ICON_RESOLUTION = '<svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:currentColor"><path d="M9 21c0 .55.45 1 1 1h4c.55 0 1-.45 1-1v-1H9v1zm3-19C8.14 2 5 5.14 5 9c0 2.38 1.19 4.47 3 5.74V17c0 .55.45 1 1 1h6c.55 0 1-.45 1-1v-2.26c1.81-1.27 3-3.36 3-5.74 0-3.86-3.14-7-7-7z"/></svg>';
-const ICON_ASSIGN = '<svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
 
 const SEARCH_CHIPS = [
   "Show all critical safety snags",
@@ -31,13 +26,12 @@ const SEARCH_CHIPS = [
   "Open snags summary",
 ];
 
-// Waveform bar heights for fake audio player
-const WAVE_HEIGHTS = [30,50,70,40,80,60,90,45,70,55,80,65,35,75,50,85,40,60,70,50,40,65,80,30];
-
 export function AllFeedbacks() {
   const [feedbacks, setFeedbacks] = useState([]);
   const [sortBy, setSortBy] = useState("newest");
+  // eslint-disable-next-line no-unused-vars
   const [editingId, setEditingId] = useState(null);
+  // eslint-disable-next-line no-unused-vars
   const [editValues, setEditValues] = useState({ feedback: "", suggestion: "" });
   const [loadingReport, setLoadingReport] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -47,7 +41,7 @@ export function AllFeedbacks() {
   const [filterCategory, setFilterCategory] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterSite, setFilterSite] = useState("all");
-  const [filterPriority, setFilterPriority] = useState("all");
+  const [filterImpact, setFilterImpact] = useState("all");
 
   // Search
   const [aiSearchQuery, setAiSearchQuery] = useState("");
@@ -59,46 +53,32 @@ export function AllFeedbacks() {
 
   // Data
   const [sites, setSites] = useState([]);
-  const [siteUsers, setSiteUsers] = useState([]);
-  const [assignmentForm, setAssignmentForm] = useState({});
   const [assignedUsers, setAssignedUsers] = useState({});
-  const [assigningId, setAssigningId] = useState(null);
 
   // Highlight snag navigated from dashboard
   const location = useLocation();
-  const [highlightId, setHighlightId] = useState(location.state?.highlightSnagId || null);
+  const [highlightId] = useState(location.state?.highlightSnagId || null);
 
   // Action modals
   const [assignModalSnag, setAssignModalSnag] = useState(null);
   const [rejectModalAssignment, setRejectModalAssignment] = useState(null);
   const [escalateModalAssignment, setEscalateModalAssignment] = useState(null);
-
-  // Audio refs
-  const audioRefs = useRef({});
+  const [reassignConfirm, setReassignConfirm] = useState(null); // { snag, assignment }
 
   const { apiCall, isAdmin, user } = useAuth();
-  const API = "http://localhost:9999/api";
-  const BASE_URL = "http://localhost:9999";
-
-  // (fetchSiteUsers and fetchAssignments old versions removed — now handled by fetchAllData)
+  const API = API_BASE;
+  const BASE = BASE_URL;
 
   // ── Fetch all data in parallel + cache ──
   const fetchAllData = async (bustCache = false) => {
     try {
       setRefreshing(true);
       if (bustCache) {
-        invalidate('feedbacks');
-        invalidate('assignments');
-        invalidate('siteUsers');
+        invalidate(''); // bust all caches
       }
-      const userSiteUrl = user?.site_id
-        ? `${API}/snag-assignments/site/${user.site_id}/users`
-        : `${API}/snag-assignments/users/all`;
-
-      const [fbData, assignData, usersData, sitesData] = await Promise.all([
+      const [fbData, assignData, sitesData] = await Promise.all([
         cachedFetch('feedbacks', () => apiCall(`${API}/dashboard/feedbacks`)),
         cachedFetch('assignments', () => apiCall(`${API}/snag-assignments/assignments`)),
-        cachedFetch(`siteUsers_${user?.site_id || 'all'}`, () => apiCall(userSiteUrl), 60_000),
         cachedFetch('sites', () => apiCall(`${API}/sites`), 120_000),
       ]);
 
@@ -117,16 +97,15 @@ export function AllFeedbacks() {
             status: a.status,
             assigner_remarks: a.assigner_remarks || a.description || "",
             solution: a.solution || "",
+            proof: a.proof || null,
             due_date: a.due_date || null,
+            priority: a.priority || null,
             rejection_count: a.rejection_count || 0,
             rejection_remarks: a.rejection_remarks || "",
           });
         });
         setAssignedUsers(assignedBySnag);
       }
-
-      if (!usersData || usersData.error) setSiteUsers([]);
-      else setSiteUsers(Array.isArray(usersData) ? usersData : []);
 
       if (Array.isArray(sitesData)) setSites(sitesData);
 
@@ -139,9 +118,9 @@ export function AllFeedbacks() {
     }
   };
 
-  // Keep fetchAssignments for modal callbacks (bust cache + refetch assignments only)
+  // Keep fetchAssignments for modal callbacks
   const fetchAssignments = async () => {
-    invalidate('assignments');
+    invalidate(''); // bust all caches (assignments, myJobs, assignedByMe, metrics, etc.)
     try {
       const data = await apiCall(`${API}/snag-assignments/assignments`);
       if (!data || data.error) return;
@@ -156,7 +135,9 @@ export function AllFeedbacks() {
           status: a.status,
           assigner_remarks: a.assigner_remarks || a.description || "",
           solution: a.solution || "",
+          proof: a.proof || null,
           due_date: a.due_date || null,
+          priority: a.priority || null,
           rejection_count: a.rejection_count || 0,
           rejection_remarks: a.rejection_remarks || "",
         });
@@ -164,6 +145,10 @@ export function AllFeedbacks() {
       setAssignedUsers(assignedBySnag);
     } catch (err) { console.error("Error fetching assignments:", err); }
   };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const onRefreshForFreshness = useCallback(() => fetchAllData(true), [apiCall]);
+  useDataFreshness(onRefreshForFreshness);
 
   useEffect(() => {
     fetchAllData();
@@ -180,35 +165,6 @@ export function AllFeedbacks() {
       }, 300);
     }
   }, [highlightId, feedbacks]);
-
-  // ── Assign snag ──
-  const handleAssignSnag = async (snagId, snagSiteId) => {
-    const selectedUserId = assignmentForm[`${snagId}_user`];
-    const remarks = assignmentForm[`${snagId}_remarks`];
-    const dueDate = assignmentForm[`${snagId}_due`];
-    if (!selectedUserId) { showToast("Please select a team member", "warning"); return; }
-    setAssigningId(snagId);
-    try {
-      const body = {
-        snag_id: snagId,
-        site_id: user?.site_id || snagSiteId,
-        assigned_user_id: selectedUserId,
-        assigner_remarks: remarks || "",
-      };
-      if (dueDate) body.due_date = new Date(dueDate).toISOString();
-
-      const response = await apiCall(`${API}/snag-assignments/assignments`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      });
-      if (response && !response.error) {
-        showToast("Task assigned!", "success");
-        setAssignmentForm({ ...assignmentForm, [`${snagId}_user`]: "", [`${snagId}_remarks`]: "", [`${snagId}_due`]: "" });
-        fetchAssignments();
-      } else { showToast("Failed to assign", "error"); }
-    } catch (err) { showToast("Error assigning task", "error"); }
-    finally { setAssigningId(null); }
-  };
 
   // ── AI Search ──
   function beautifyResponse(text) {
@@ -241,16 +197,14 @@ export function AllFeedbacks() {
 
   const applyChip = (q) => {
     setAiSearchQuery(q);
-    setTimeout(() => {
-      handleAiSearch();
-    }, 0);
+    setTimeout(() => handleAiSearch(), 0);
   };
 
   // ── Report ──
   const downloadReport = async () => {
     try {
       setLoadingReport(true);
-      const res = await fetch(`${BASE_URL}/api/report/generate-report`, { method: "GET" });
+      const res = await fetch(`${BASE}/api/report/generate-report`, { method: "GET" });
       if (!res.ok) throw new Error("Failed");
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -262,36 +216,66 @@ export function AllFeedbacks() {
     finally { setLoadingReport(false); }
   };
 
-  // ── Toggle status ──
+  // ── Toggle status (close/reopen) ──
   const toggleTodo = async (id, currentStatus) => {
     try {
       const newStatus = currentStatus === 'resolved' ? 'pending' : 'resolved';
       const response = await apiCall(`${API}/dashboard/feedbacks/${id}/resolve`, { method: "PUT", body: JSON.stringify({ status: newStatus }) });
       if (response && response.updated) {
+        invalidate(''); // bust all caches so Job Zone + Dashboard stay in sync
         setFeedbacks((prev) => prev.map((f) => (f.id === id ? response.updated : f)));
         showToast(newStatus === 'resolved' ? "Marked as resolved" : "Reopened", "success");
+
+        if (newStatus === 'resolved') {
+          const primaryAssignment = getPrimaryAssignment(id);
+          if (primaryAssignment?.assignment_id) {
+            apiCall(`${API}/snag-assignments/notify`, {
+              method: 'POST',
+              body: JSON.stringify({ assignment_id: primaryAssignment.assignment_id, type: 'approve' }),
+            }).catch(() => {});
+          }
+        }
       }
     } catch (err) { showToast("Failed to update status", "error"); }
   };
 
-  // ── Edit ──
-  const editFeedback = (fb) => { setEditingId(fb.id); setEditValues({ feedback: fb.feedback || "", suggestion: fb.suggestion || "" }); };
-  const saveEdit = async (id) => {
-    try {
-      const response = await apiCall(`${API}/dashboard/feedbacks/${id}`, { method: "PUT", body: JSON.stringify(editValues) });
-      if (response && response.id) { setFeedbacks((prev) => prev.map((f) => (f.id === id ? response : f))); showToast("Updated", "success"); setEditingId(null); }
-    } catch (err) { showToast("Failed to update", "error"); }
-  };
-  const deleteFeedback = async (id) => {
-    try { await apiCall(`${API}/dashboard/feedbacks/${id}`, { method: "DELETE" }); setFeedbacks((prev) => prev.filter((f) => f && f.id !== id)); showToast("Deleted", "success"); }
-    catch (err) { showToast("Failed to delete", "error"); }
+  // ── Helpers ──
+  const getDueClass = (dueDate) => {
+    if (!dueDate) return 'due-ok';
+    const today = new Date().toISOString().split('T')[0];
+    const due = new Date(dueDate).toISOString().split('T')[0];
+    if (due < today) return 'due-over';
+    if (due === today) return 'due-today';
+    return 'due-ok';
   };
 
-  // ── Audio playback ──
-  const playAudio = (snagId) => {
-    const audio = audioRefs.current[snagId];
-    if (!audio) return;
-    if (audio.paused) { audio.play(); } else { audio.pause(); }
+  const formatDue = (dueDate) => {
+    if (!dueDate) return '—';
+    return new Date(dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  };
+
+  const getPrimaryAssignment = (snagId) => {
+    const assignments = assignedUsers[snagId] || [];
+    return assignments[0] || null;
+  };
+
+  const getDisplayStatus = (fb) => {
+    return deriveSnagDisplayStatus(fb.status, assignedUsers[fb.id] || []);
+  };
+
+  // ── Reassign flow ──
+  const handleReassignClick = (snag, assignment) => {
+    setReassignConfirm({ snag, assignment });
+  };
+
+  const handleReassignConfirmed = () => {
+    const { snag, assignment } = reassignConfirm;
+    setReassignConfirm(null);
+    setAssignModalSnag({
+      id: snag.id,
+      site_id: snag.site_id || user?.site_id,
+      currentAssignment: assignment,
+    });
   };
 
   // ── Filtering & Sorting ──
@@ -309,7 +293,7 @@ export function AllFeedbacks() {
 
   if (filterCategory !== "all") displayed = displayed.filter(f => f.category === filterCategory);
   if (filterSite !== "all") displayed = displayed.filter(f => f.site?.site_name === filterSite);
-  if (filterPriority !== "all") displayed = displayed.filter(f => getPriority(f.category) === filterPriority);
+  if (filterImpact !== "all") displayed = displayed.filter(f => getImpact(f.category) === filterImpact);
 
   if (sortBy === "resolved") displayed = displayed.filter(f => f.status === 'resolved');
   if (sortBy === "unresolved") displayed = displayed.filter(f => f.status === 'pending');
@@ -317,37 +301,9 @@ export function AllFeedbacks() {
     sortBy === "oldest" ? new Date(a.created_at) - new Date(b.created_at) : new Date(b.created_at) - new Date(a.created_at)
   );
 
-  const total = feedbacks.filter(f => f).length;
-  const resolved = feedbacks.filter(f => f && f.status === 'resolved').length;
   const openCount = feedbacks.filter(f => f && f.status === 'pending').length;
-  const criticalCount = feedbacks.filter(f => f && getPriority(f.category) === 'critical').length;
+  const criticalCount = feedbacks.filter(f => f && getImpact(f.category) === 'critical').length;
   const categories = [...new Set(feedbacks.filter(f => f && f.category).map(f => f.category))];
-
-  // ── Due date helper ──
-  const getDueClass = (dueDate) => {
-    if (!dueDate) return 'due-ok';
-    const today = new Date().toISOString().split('T')[0];
-    const due = new Date(dueDate).toISOString().split('T')[0];
-    if (due < today) return 'due-over';
-    if (due === today) return 'due-today';
-    return 'due-ok';
-  };
-
-  const formatDue = (dueDate) => {
-    if (!dueDate) return '—';
-    return new Date(dueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  };
-
-  // ── Get primary assignment for a snag ──
-  const getPrimaryAssignment = (snagId) => {
-    const assignments = assignedUsers[snagId] || [];
-    return assignments[0] || null;
-  };
-
-  // ── Derive display status for a snag ──
-  const getDisplayStatus = (fb) => {
-    return deriveSnagDisplayStatus(fb.status, assignedUsers[fb.id] || []);
-  };
 
   // ── RENDER ──
   return (
@@ -417,8 +373,8 @@ export function AllFeedbacks() {
           <option value="in_review">In Review</option>
           <option value="closed">Closed</option>
         </select>
-        <select className="filter-sel" value={filterPriority} onChange={(e) => setFilterPriority(e.target.value)}>
-          <option value="all">All Priorities</option>
+        <select className="filter-sel" value={filterImpact} onChange={(e) => setFilterImpact(e.target.value)}>
+          <option value="all">All Impact</option>
           <option value="critical">Critical</option>
           <option value="high">High</option>
           <option value="medium">Medium</option>
@@ -459,357 +415,29 @@ export function AllFeedbacks() {
         )}
 
         {displayed.map((fb) => {
-          const priority = getPriority(fb.category);
-          const vertical = getCategoryVertical(fb.category);
-          const snagId = formatSnagId(fb.id);
           const displayStatus = getDisplayStatus(fb);
           const primaryAssignment = getPrimaryAssignment(fb.id);
-          const assignments = assignedUsers[fb.id] || [];
-          const hasAudio = fb.feedback_type === 'voice' && fb.voice_url;
-          const hasImage = !!fb.image_url;
 
-          // Solution badge logic
-          const hasSolution = assignments.some(a => a.solution);
-          const solutionBadge = hasSolution
-            ? { text: 'Solution filed', cls: 'has-content' }
-            : displayStatus === 'in_review'
-            ? { text: 'Pending review', cls: 'pending' }
-            : { text: 'Awaiting', cls: '' };
-
-          // Audio badge
-          const audioBadge = hasAudio
-            ? { text: 'Recording available', cls: 'has-content' }
-            : { text: 'No recording', cls: '' };
-
-          // Assignment badge
-          const assignBadge = primaryAssignment
-            ? { text: primaryAssignment.username, cls: 'has-content' }
-            : { text: 'Unassigned', cls: '' };
-
-          // Due date from primary assignment
-          const dueDate = primaryAssignment?.due_date || null;
-
-          const isHighlighted = highlightId === fb.id;
-
-          if (viewMode === 'list') {
-            // ── LIST VIEW ROW ──
-            return (
-              <div key={fb.id} id={`snag-card-${fb.id}`} className={`snag-card priority-${priority}${isHighlighted ? ' snag-highlighted' : ''}`}>
-                <div className="card-accent" />
-                <div className="card-body-list">
-                  <div className="list-col list-col-id">
-                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--ink-400)' }}>
-                      <span style={{ color: 'var(--ink-600)', fontWeight: 500 }}>{snagId}</span>
-                    </div>
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--brand-black)', marginTop: '2px', lineHeight: 1.3 }}>
-                      {fb.feedback || (fb.feedback_type === "voice" ? "Voice Feedback" : "No feedback")}
-                    </div>
-                  </div>
-                  <div className="list-col list-col-tags">
-                    <CategoryTag category={fb.category} />
-                    <PriorityBadge category={fb.category} />
-                  </div>
-                  <div className="list-col list-col-assign">
-                    <div style={{ fontSize: '12px', fontWeight: 600, color: primaryAssignment ? 'var(--brand-black)' : 'var(--ink-400)' }}>
-                      {primaryAssignment ? primaryAssignment.username : 'Unassigned'}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--ink-400)' }}>{fb.site?.site_name || '—'}</div>
-                  </div>
-                  <div className="list-col list-col-due">
-                    <div className={`due-cell ${getDueClass(dueDate)}`}>{formatDue(dueDate)}</div>
-                  </div>
-                  <div className="list-col list-col-actions" style={{ display: 'flex', gap: '4px' }}>
-                    <StatusPill displayStatus={displayStatus} />
-                  </div>
-                </div>
-              </div>
-            );
-          }
-
-          // ── GRID VIEW CARD ──
           return (
-            <div key={fb.id} id={`snag-card-${fb.id}`} className={`snag-card priority-${priority}${isHighlighted ? ' snag-highlighted' : ''}`}>
-              <div className="card-accent" />
-
-              {/* Card Header */}
-              <div className="card-header">
-                <div className="card-header-left">
-                  <div className="card-snag-id">
-                    <span className="id-num">{snagId}</span>
-                    <span className={`tag tag-${vertical}`}>{formatCategory(fb.category)}</span>
-                  </div>
-                  <div className="card-title">
-                    {fb.feedback || (fb.feedback_type === "voice" ? "Voice Feedback" : "No feedback")}
-                  </div>
-                  <div className="card-meta-row">
-                    <PriorityBadge category={fb.category} />
-                    <span className="meta-dot">&middot;</span>
-                    <span style={{ fontSize: '11px', color: 'var(--ink-400)' }}>{fb.site?.site_name || '—'}</span>
-                    <span className="meta-dot">&middot;</span>
-                    <span style={{ fontSize: '11px', color: 'var(--ink-400)' }}>{fb.reporter_name || '—'}</span>
-                  </div>
-                </div>
-                <div className="card-header-right">
-                  <StatusPill displayStatus={displayStatus} />
-                  <RevisionTag rejectionCount={primaryAssignment?.rejection_count} />
-                </div>
-              </div>
-
-              {/* Card Body */}
-              <div className="card-body">
-
-                {/* ── SNAG DETAIL SECTION ── */}
-                <CollapsibleSection
-                  title="Snag Detail"
-                  icon={ICON_DETAIL}
-                  badge={`Reported ${new Date(fb.created_at).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`}
-                  badgeClass="has-content"
-                  defaultOpen={false}
-                >
-                  {/* Image */}
-                  {hasImage ? (
-                    <div className="snag-image-thumb" onClick={() => setLightboxImage(fb.image_url)}>
-                      <img src={fb.image_url} alt="Snag" />
-                      <span className="image-expand-hint">View full</span>
-                    </div>
-                  ) : (
-                    <div className="snag-image-thumb">
-                      <div className="snag-image-placeholder">
-                        <svg viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
-                        <span>No photo attached</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Detail Grid */}
-                  <div className="snag-detail-grid">
-                    <div>
-                      <div className="detail-label">Site</div>
-                      <div className="detail-value">{fb.site?.site_name || '—'}</div>
-                    </div>
-                    <div>
-                      <div className="detail-label">Reporter</div>
-                      <div className="detail-value">{fb.reporter_name || '—'}</div>
-                    </div>
-                    <div>
-                      <div className="detail-label">Date Reported</div>
-                      <div className="detail-value mono">{new Date(fb.created_at).toLocaleDateString('en-GB')}</div>
-                    </div>
-                    <div>
-                      <div className="detail-label">Type</div>
-                      <div className="detail-value">{fb.feedback_type || 'text'}</div>
-                    </div>
-                  </div>
-
-                  {/* Inline edit */}
-                  {editingId === fb.id && (
-                    <div className="edit-inline">
-                      <input
-                        value={editValues.feedback}
-                        onChange={(e) => setEditValues(v => ({ ...v, feedback: e.target.value }))}
-                        placeholder="Feedback text"
-                      />
-                      <input
-                        value={editValues.suggestion}
-                        onChange={(e) => setEditValues(v => ({ ...v, suggestion: e.target.value }))}
-                        placeholder="Suggestion"
-                      />
-                      <div className="edit-inline-btns">
-                        <button className="footer-btn close-btn" onClick={() => saveEdit(fb.id)}>Save</button>
-                        <button className="footer-btn" onClick={() => setEditingId(null)}>Cancel</button>
-                      </div>
-                    </div>
-                  )}
-                </CollapsibleSection>
-
-                {/* ── AUDIO / TRANSCRIPTION SECTION ── */}
-                <CollapsibleSection
-                  title="Audio Report"
-                  icon={ICON_AUDIO}
-                  badge={audioBadge.text}
-                  badgeClass={audioBadge.cls}
-                >
-                  {hasAudio ? (
-                    <>
-                      <div className="audio-player">
-                        <button className="audio-play-btn" onClick={() => playAudio(fb.id)}>
-                          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
-                        </button>
-                        <div className="audio-waveform">
-                          {WAVE_HEIGHTS.map((h, i) => (
-                            <div key={i} className={`wave-bar${i < 8 ? ' played' : ''}`} style={{ height: `${h}%` }} />
-                          ))}
-                        </div>
-                        <span className="audio-dur">—:——</span>
-                      </div>
-                      <audio ref={el => { audioRefs.current[fb.id] = el; }} src={fb.voice_url} preload="none" />
-                      {fb.transcription ? (
-                        <div className="transcription-box">{fb.transcription}</div>
-                      ) : (
-                        <div className="transcription-box none">Transcription processing…</div>
-                      )}
-                    </>
-                  ) : (
-                    <div className="audio-none">
-                      <svg viewBox="0 0 24 24"><path d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"/></svg>
-                      No audio recorded
-                    </div>
-                  )}
-                </CollapsibleSection>
-
-                {/* ── RESOLUTION SECTION ── */}
-                <CollapsibleSection
-                  title="Resolution"
-                  icon={ICON_RESOLUTION}
-                  badge={solutionBadge.text}
-                  badgeClass={solutionBadge.cls}
-                >
-                  {/* Show solution if any assignment has one */}
-                  {hasSolution ? (
-                    <div className="solution-box">
-                      <div className="solution-header">
-                        <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-                        <span className="solution-header-label">Solution Delivered</span>
-                      </div>
-                      <div className="solution-text">
-                        {assignments.find(a => a.solution)?.solution}
-                      </div>
-                      <div className="solution-submitted-by">
-                        <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-                        Filed by {assignments.find(a => a.solution)?.username || 'Unknown'}
-                      </div>
-                    </div>
-                  ) : fb.suggestion ? (
-                    <>
-                      <div className="suggestion-box">
-                        <div className="suggestion-header">
-                          <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-                          <span className="suggestion-header-label">Suggested Resolution</span>
-                        </div>
-                        <div className="suggestion-text">{fb.suggestion}</div>
-                      </div>
-                      <div className="no-solution">
-                        <svg viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
-                        Solution not yet filed by engineer
-                      </div>
-                    </>
-                  ) : (
-                    <div className="no-solution">
-                      <svg viewBox="0 0 24 24"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg>
-                      No solution or suggestion recorded yet
-                    </div>
-                  )}
-                </CollapsibleSection>
-
-                {/* ── ASSIGNMENT SECTION (visible to all) ── */}
-                <CollapsibleSection
-                  title="Assignment"
-                  icon={ICON_ASSIGN}
-                  badge={assignBadge.text}
-                  badgeClass={assignBadge.cls}
-                >
-                  <div className="assignment-block">
-                    {/* Current assignment display */}
-                    {primaryAssignment ? (
-                      <div className="assignment-current">
-                        <div className="assign-avatar">
-                          {primaryAssignment.username.split(' ').map(n => n[0]).join('').slice(0,2)}
-                        </div>
-                        <div className="assign-info">
-                          <div className="assign-name">{primaryAssignment.username}</div>
-                          <div className="assign-sub">{primaryAssignment.role || 'Team member'} &middot; {fb.site?.site_name || '—'}</div>
-                        </div>
-                        {dueDate && (
-                          <div className="assign-eta">
-                            <div className="assign-eta-label">Est. completion</div>
-                            <span className={getDueClass(dueDate)}>{formatDue(dueDate)}</span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div className="assignment-current">
-                        <div className="assign-avatar unassigned">
-                          <svg viewBox="0 0 24 24" style={{ width: 14, height: 14, fill: '#9A9A9A' }}><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-                        </div>
-                        <div className="assign-info">
-                          <div className="assign-name unassigned">Unassigned</div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Additional assignments */}
-                    {assignments.length > 1 && assignments.slice(1).map((a, idx) => (
-                      <div key={idx} className="assignment-current" style={{ marginTop: '4px' }}>
-                        <div className="assign-avatar">
-                          {a.username.split(' ').map(n => n[0]).join('').slice(0,2)}
-                        </div>
-                        <div className="assign-info">
-                          <div className="assign-name">{a.username}</div>
-                          <div className="assign-sub">{a.status}</div>
-                        </div>
-                      </div>
-                    ))}
-
-                    {/* Assign button — opens modal */}
-                    {isAdmin() && (
-                      <div className="assign-row" style={{ marginTop: '8px' }}>
-                        <button
-                          className="assign-btn"
-                          onClick={() => setAssignModalSnag({ id: fb.id, site_id: fb.site_id || user?.site_id })}
-                        >
-                          {primaryAssignment ? 'Reassign' : 'Assign'}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </CollapsibleSection>
-              </div>
-
-              {/* ── Card Footer ── */}
-              <div className="card-footer">
-                <div className="card-footer-meta">
-                  {dueDate && (
-                    <span className="footer-meta-item">
-                      <svg viewBox="0 0 24 24"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67V7z"/></svg>
-                      Due <strong className={getDueClass(dueDate)}>{formatDue(dueDate)}</strong>
-                    </span>
-                  )}
-                  <span className="footer-meta-item">
-                    <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>
-                    <strong>{fb.site?.site_name || '—'}</strong>
-                  </span>
-                </div>
-                <div className="card-footer-actions">
-                  {/* Open/unassigned → Assign */}
-                  {displayStatus === 'open' && !primaryAssignment && isAdmin() && (
-                    <button className="footer-btn" onClick={() => setAssignModalSnag({ id: fb.id, site_id: fb.site_id || user?.site_id })}>
-                      <svg viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
-                      Assign
-                    </button>
-                  )}
-                  {/* In Progress → Escalate */}
-                  {(displayStatus === 'in_progress') && primaryAssignment && (
-                    <button className="footer-btn flag-btn" onClick={() => setEscalateModalAssignment(primaryAssignment.assignment_id)}>
-                      <svg viewBox="0 0 24 24"><path d="M14.4 6L14 4H5v17h2v-7h5.6l.4 2h7V6z"/></svg>
-                      Escalate
-                    </button>
-                  )}
-                  {/* In Review → Reject + Close */}
-                  {displayStatus === 'in_review' && primaryAssignment && (
-                    <>
-                      <button className="footer-btn flag-btn" onClick={() => setRejectModalAssignment(primaryAssignment.assignment_id)}>
-                        <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-                        Reject
-                      </button>
-                      <button className="footer-btn close-btn" onClick={() => toggleTodo(fb.id, fb.status)}>
-                        <svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
-                        Close Snag
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
+            <AssignerCard
+              key={fb.id}
+              snag={fb}
+              assignment={primaryAssignment}
+              displayStatus={displayStatus}
+              onImageClick={setLightboxImage}
+              onAssign={() => setAssignModalSnag({ id: fb.id, site_id: fb.site_id || user?.site_id })}
+              onReassign={() => handleReassignClick(fb, primaryAssignment)}
+              onReject={() => setRejectModalAssignment(primaryAssignment?.assignment_id)}
+              onEscalate={() => setEscalateModalAssignment(primaryAssignment?.assignment_id)}
+              onClose={() => toggleTodo(fb.id, fb.status)}
+              isAdmin={isAdmin()}
+              isHighlighted={highlightId === fb.id}
+              viewMode={viewMode}
+              getDueClass={getDueClass}
+              formatDue={formatDue}
+              apiCall={apiCall}
+              apiBase={API}
+            />
           );
         })}
       </div>
@@ -820,6 +448,7 @@ export function AllFeedbacks() {
         onClose={() => setAssignModalSnag(null)}
         snagId={assignModalSnag?.id}
         siteId={assignModalSnag?.site_id}
+        currentAssignment={assignModalSnag?.currentAssignment}
         onAssigned={() => { fetchAssignments(); setAssignModalSnag(null); }}
       />
       <RejectModal
@@ -833,6 +462,12 @@ export function AllFeedbacks() {
         onClose={() => setEscalateModalAssignment(null)}
         assignmentId={escalateModalAssignment}
         onEscalated={() => { fetchAssignments(); setEscalateModalAssignment(null); }}
+      />
+      <ReassignConfirmModal
+        isOpen={!!reassignConfirm}
+        onClose={() => setReassignConfirm(null)}
+        currentAssigneeName={reassignConfirm?.assignment?.username}
+        onConfirm={handleReassignConfirmed}
       />
     </div>
   );

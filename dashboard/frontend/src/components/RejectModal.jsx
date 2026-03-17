@@ -3,7 +3,8 @@ import ActionModal from './ActionModal';
 import { useAuth } from '../AuthContext';
 import { showToast } from '../Toast';
 
-const API = 'http://localhost:9999/api';
+import { API_BASE } from '../config/api';
+const API = API_BASE;
 
 export default function RejectModal({ isOpen, onClose, assignmentId, onRejected }) {
   const { apiCall } = useAuth();

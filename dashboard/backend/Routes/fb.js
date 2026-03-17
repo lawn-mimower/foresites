@@ -113,23 +113,20 @@ Router.put('/feedbacks/:id/resolve', async (req, res) => {
       return res.status(404).json({ error: 'Feedback not found' });
     }
 
-    // ✅ Also update any related assignments for this snag
-    // Map snag status to assignment status (snag uses 'pending', assignment uses 'open')
-    const assignmentStatus = status === 'resolved' ? 'resolved' : 'open';
-    const assignmentUpdateData = { status: assignmentStatus };
+    // ✅ Also update any related active assignments for this snag
     if (status === 'resolved') {
-      assignmentUpdateData.resolved_at = new Date().toISOString();
-    }
+      const { error: assignmentError } = await supabase
+        .from('snag_assignment')
+        .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+        .eq('snag_id', id)
+        .eq('is_active', true);
 
-    const { error: assignmentError } = await supabase
-      .from('snag_assignment')
-      .update(assignmentUpdateData)
-      .eq('snag_id', id);
-
-    if (assignmentError) {
-      console.warn('⚠️ Warning: Assignment update failed', assignmentError);
-      // Don't fail the response, just warn
+      if (assignmentError) {
+        console.warn('⚠️ Warning: Assignment update failed', assignmentError);
+      }
     }
+    // When snag goes back to pending, don't reset assignment status —
+    // the assignment has its own lifecycle (in_progress, in_review, etc.)
 
     res.json({
       message: '✅ Snag status updated',

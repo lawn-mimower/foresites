@@ -33,8 +33,8 @@ export function Navbar() {
 
   const mainLinks = [
     { to: '/', label: 'Dashboard' },
+    { to: '/meetingzone', label: 'Job Zone' },
     { to: '/allfeedbacks', label: 'All Snags' },
-    { to: '/meetingzone', label: 'Assigned Jobs' },
     { to: '/showsites', label: 'Sites' },
     { to: '/todos', label: 'My Tasks' },
     { to: '/chat', label: 'AI Chat' },

@@ -1,10 +1,10 @@
+import { useEffect } from 'react';
 import ManageEmployee from './ManageEmployee';
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 import './css/App.css';
 import './css/design-system.css';
 import{Navbar} from'./Navbar'
 import {Footer} from './Footer'
-import {Home} from './home';
 import ForesitesDashboard from './ForesitesDashboard';
 import{AssignedJobs}from './AssignedJobs';
 import{AssignSnags}from './AssignSnags';
@@ -19,8 +19,23 @@ import { ChatPanel } from "./ChatPanel";
 import { ProtectedRoute } from "./ProtectedRoute";
 import { ToastContainer } from "./Toast";
 import { AuthProvider } from './AuthContext';
+import { setImpactMap } from './utils/snagHelpers';
+import { API_BASE } from './config/api';
 
 function App() {
+  useEffect(() => {
+    fetch(`${API_BASE}/impact-mapping`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => {
+        if (Array.isArray(data)) {
+          const map = {};
+          data.forEach(r => { map[r.category] = r.impact_level; });
+          setImpactMap(map);
+        }
+      })
+      .catch(() => {}); // fallback to hardcoded mapping
+  }, []);
+
   return (
     <AuthProvider>
       <div className="App">
@@ -39,6 +54,11 @@ function App() {
               </ProtectedRoute>
             } />
             <Route path="/meetingzone" element={
+              <ProtectedRoute requireAuth={true}>
+                <AssignedJobs />
+              </ProtectedRoute>
+            } />
+            <Route path="/assignedjobs" element={
               <ProtectedRoute requireAuth={true}>
                 <AssignedJobs />
               </ProtectedRoute>

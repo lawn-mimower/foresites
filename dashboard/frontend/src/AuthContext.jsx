@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { API_BASE, BASE_URL } from './config/api';
 
 const AuthContext = createContext();
 
@@ -39,7 +40,7 @@ export const AuthProvider = ({ children }) => {
 
   const verifyToken = async (tokenToVerify) => {
     try {
-      const response = await fetch('http://localhost:9999/api/auth/verify', {
+      const response = await fetch(`${API_BASE}/auth/verify`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${tokenToVerify}`,
@@ -70,7 +71,7 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     try {
-      const response = await fetch('http://localhost:9999/api/auth/login', {
+      const response = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -119,7 +120,7 @@ export const AuthProvider = ({ children }) => {
       },
     };
 
-    const fullUrl = url.startsWith('http') ? url : `http://localhost:9999${url}`;
+    const fullUrl = url.startsWith('http') ? url : `${BASE_URL}${url}`;
 
     try {
       const response = await fetch(fullUrl, config);
@@ -152,7 +153,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       if (token) {
-        await fetch('http://localhost:9999/api/auth/logout', {
+        await fetch(`${API_BASE}/auth/logout`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,

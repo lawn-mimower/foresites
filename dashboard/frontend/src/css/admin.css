@@ -417,6 +417,87 @@
   font-size: var(--font-size-base);
 }
 
+/* Admin Tabs */
+.admin-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+  border-bottom: 2px solid var(--ink-200);
+  padding-bottom: 0;
+}
+
+.admin-tab {
+  padding: 10px 20px;
+  border: none;
+  background: none;
+  font-weight: 700;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-500);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.admin-tab:hover {
+  color: var(--ink-900);
+}
+
+.admin-tab.active {
+  color: var(--brand-red);
+  border-bottom-color: var(--brand-red);
+}
+
+/* Impact Mapping */
+.impact-mapping-section {
+  background: white;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--ink-200);
+  overflow: hidden;
+}
+
+.impact-mapping-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--space-5);
+  border-bottom: 1px solid var(--ink-200);
+}
+
+.impact-mapping-header h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-900);
+}
+
+.impact-mapping-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.impact-mapping-table th,
+.impact-mapping-table td {
+  padding: var(--space-3) var(--space-4);
+  text-align: left;
+  border-bottom: 1px solid var(--ink-200);
+  font-size: var(--font-size-sm);
+}
+
+.impact-mapping-table th {
+  background: var(--ink-900);
+  color: white;
+  font-weight: 700;
+  font-size: var(--font-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 /* Loading */
 .admin-panel .loading {
   text-align: center;

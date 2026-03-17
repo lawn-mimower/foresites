@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import QRCode from "react-qr-code";
+import { API_BASE } from "./config/api";
 import "./css/manage-employee.css";
-const API_URL = "http://localhost:9999/api/employee";
+const API_URL = `${API_BASE}/employee`;
 
 const initialForm = {
   name: '',

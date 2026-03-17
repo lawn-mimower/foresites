@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
 import { showToast } from "./Toast";
+import { API_BASE, BASE_URL } from "./config/api";
 import "./css/meetzone.css";
 
 export function MeetingZone() {
@@ -9,8 +10,7 @@ export function MeetingZone() {
   const [loading, setLoading] = useState(false);
   const { apiCall, isAdmin } = useAuth();
 
-  const API = "http://localhost:9999/api/dashboard";
-  const BASE_URL = "http://localhost:9999";
+  const API = `${API_BASE}/dashboard`;
 
   useEffect(() => {
     fetchAllFeedbacks();

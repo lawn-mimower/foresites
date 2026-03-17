@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "./AuthContext";
+import { API_BASE } from "./config/api";
 import "./css/home.css";
 
 export function Home() {
@@ -14,7 +15,7 @@ export function Home() {
     const fetchStats = async () => {
       setLoading(true);
       try {
-        const data = await apiCall("http://localhost:9999/api/dashboard/stats");
+        const data = await apiCall(`${API_BASE}/dashboard/stats`);
         if (data && !data.error) {
           if (data && typeof data.total === "number") setStats(data);
         }
@@ -61,7 +62,7 @@ export function Home() {
     try {
       const token = localStorage.getItem("authToken");
 
-      const response = await fetch("http://localhost:9999/api/dashboard/ask", {
+      const response = await fetch(`${API_BASE}/dashboard/ask`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

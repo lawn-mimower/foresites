@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { showToast } from "./Toast";
 import { useAuth } from "./AuthContext";
 import "./css/login.css";
@@ -12,14 +12,18 @@ export function Login() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, isAuthenticated } = useAuth();
+  const from = location.state?.from;
 
-  // Check if user is already logged in
+  // Check if user is already logged in (only on mount, not after login)
   useEffect(() => {
     if (isAuthenticated()) {
-      navigate('/');
+      const redirectTo = from ? `${from.pathname}${from.search || ''}` : '/';
+      navigate(redirectTo, { replace: true });
     }
-  }, [navigate, isAuthenticated]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleChange = (e) => {
     setFormData({
@@ -37,7 +41,8 @@ export function Login() {
       
       if (result.success) {
         showToast(`Welcome back, ${result.user.username}!`, 'success');
-        navigate('/');
+        const redirectTo = from ? `${from.pathname}${from.search || ''}` : '/';
+        navigate(redirectTo);
       } else {
         showToast(result.error || 'Login failed', 'error');
       }

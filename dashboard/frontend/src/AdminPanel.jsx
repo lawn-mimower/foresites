@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "./AuthContext";
 import { showToast } from "./Toast";
+import { API_BASE } from "./config/api";
+import ImpactMappingPanel from "./components/ImpactMappingPanel";
 import "./css/admin.css";
 
 export function AdminPanel() {
-  const { user, token, isSuperAdmin, apiCall } = useAuth();
+  const { isSuperAdmin, apiCall } = useAuth();
+  const [adminTab, setAdminTab] = useState('users');
   const [users, setUsers] = useState([]);
   const [buildings, setBuildings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedUser, setSelectedUser] = useState(null);
+  const [selectedUser] = useState(null);
   const [showUserForm, setShowUserForm] = useState(false);
   const [editingUserId, setEditingUserId] = useState(null);
   const [showLoginHistory, setShowLoginHistory] = useState(false);
@@ -20,7 +23,8 @@ export function AdminPanel() {
     role: "Jr. engineer",
     department: "",
     designation: "",
-    site_id: ""
+    site_id: "",
+    phone_number: ""
   });
 
   const roleOptions = [
@@ -40,12 +44,13 @@ export function AdminPanel() {
     if (isSuperAdmin()) {
       fetchUsers();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuperAdmin]);
 
   const fetchUsers = async () => {
     try {
-      const data = await apiCall('http://localhost:9999/api/auth/users');
-      
+      const data = await apiCall(`${API_BASE}/auth/users`);
+
       if (data && !data.error) {
         setUsers(data.users);
       } else {
@@ -61,7 +66,7 @@ export function AdminPanel() {
 
   const fetchBuildings = async () => {
     try {
-      const data = await apiCall('http://localhost:9999/api/sites');
+      const data = await apiCall(`${API_BASE}/sites`);
       
       if (data && !Array.isArray(data)) {
         showToast('Failed to fetch buildings', 'error');
@@ -82,7 +87,8 @@ export function AdminPanel() {
       role: "Jr. engineer",
       department: "",
       designation: "",
-      site_id: ""
+      site_id: "",
+      phone_number: ""
     });
     fetchBuildings();
     setEditingUserId(null);
@@ -98,7 +104,8 @@ export function AdminPanel() {
       role: user.role,
       department: user.department || "",
       designation: user.designation || "",
-      site_id: user.site_id || ""
+      site_id: user.site_id || "",
+      phone_number: user.phone_number || ""
     });
     setEditingUserId(user.user_id);
     fetchBuildings();
@@ -116,13 +123,14 @@ export function AdminPanel() {
           role: formData.role,
           department: formData.department,
           designation: formData.designation,
-          site_id: formData.site_id && formData.site_id.trim() ? formData.site_id : null
+          site_id: formData.site_id && formData.site_id.trim() ? formData.site_id : null,
+          phone_number: formData.phone_number
         };
         if (formData.password && formData.password.length >= 6) {
           updateData.password = formData.password;
         }
 
-        const data = await apiCall(`http://localhost:9999/api/auth/users/${editingUserId}`, {
+        const data = await apiCall(`${API_BASE}/auth/users/${editingUserId}`, {
           method: 'PUT',
           body: JSON.stringify(updateData),
         });
@@ -139,7 +147,8 @@ export function AdminPanel() {
             role: "Jr. engineer",
             department: "",
             designation: "",
-            site_id: ""
+            site_id: "",
+            phone_number: ""
           });
           fetchUsers();
         } else {
@@ -147,7 +156,7 @@ export function AdminPanel() {
         }
       } else {
         // Create new user
-        const data = await apiCall('http://localhost:9999/api/auth/register', {
+        const data = await apiCall(`${API_BASE}/auth/register`, {
           method: 'POST',
           body: JSON.stringify(formData),
         });
@@ -163,7 +172,8 @@ export function AdminPanel() {
             role: "Jr. engineer",
             department: "",
             designation: "",
-            site_id: ""
+            site_id: "",
+            phone_number: ""
           });
           fetchUsers();
         } else {
@@ -185,7 +195,7 @@ export function AdminPanel() {
     }
 
     try {
-      const response = await apiCall(`http://localhost:9999/api/auth/users/${userId}`, {
+      const response = await apiCall(`${API_BASE}/auth/users/${userId}`, {
         method: 'DELETE',
       });
 
@@ -217,7 +227,29 @@ export function AdminPanel() {
       <div className="admin-header">
         <h1>Admin Panel</h1>
         <p>Manage users and monitor system activity</p>
-        <button 
+      </div>
+
+      {/* Tab Bar */}
+      <div className="admin-tabs">
+        <button
+          className={`admin-tab${adminTab === 'users' ? ' active' : ''}`}
+          onClick={() => setAdminTab('users')}
+        >
+          User Management
+        </button>
+        <button
+          className={`admin-tab${adminTab === 'impact' ? ' active' : ''}`}
+          onClick={() => setAdminTab('impact')}
+        >
+          Impact Mapping
+        </button>
+      </div>
+
+      {adminTab === 'impact' && <ImpactMappingPanel />}
+
+      {adminTab === 'users' && <>
+      <div style={{ marginBottom: 'var(--space-4)' }}>
+        <button
           className="create-user-btn"
           onClick={() => handleOpenUserForm()}
         >
@@ -255,6 +287,7 @@ export function AdminPanel() {
                 <tr>
                   <th>Username</th>
                   <th>Email</th>
+                  <th>Phone</th>
                   <th>Building</th>
                   <th>Role</th>
                   <th>Created</th>
@@ -275,6 +308,7 @@ export function AdminPanel() {
                       </div>
                     </td>
                     <td>{user.email}</td>
+                    <td>{user.phone_number || '—'}</td>
                     <td>{user.department || '—'}</td>
                     <td>
                       <span className={`role-badge ${user.role}`}>
@@ -402,6 +436,27 @@ export function AdminPanel() {
 
               <div className="form-row">
                 <div className="form-group">
+                  <label>Phone Number (with country code, e.g. 918007953471)</label>
+                  <input
+                    type="text"
+                    value={formData.phone_number}
+                    onChange={(e) => setFormData({...formData, phone_number: e.target.value})}
+                    placeholder="e.g., 918007953471"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Designation</label>
+                  <input
+                    type="text"
+                    value={formData.designation}
+                    onChange={(e) => setFormData({...formData, designation: e.target.value})}
+                    placeholder="e.g., Manager, Coordinator"
+                  />
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
                   <label>Building</label>
                   <select
                     value={formData.department}
@@ -415,15 +470,6 @@ export function AdminPanel() {
                       </option>
                     ))}
                   </select>
-                </div>
-                <div className="form-group">
-                  <label>Designation</label>
-                  <input
-                    type="text"
-                    value={formData.designation}
-                    onChange={(e) => setFormData({...formData, designation: e.target.value})}
-                    placeholder="e.g., Manager, Coordinator"
-                  />
                 </div>
               </div>
 
@@ -459,7 +505,7 @@ export function AdminPanel() {
           <div className="modal">
             <div className="modal-header">
               <h2>Login History - {selectedUser.user.username}</h2>
-              <button 
+              <button
                 className="close-btn"
                 onClick={() => setShowLoginHistory(false)}
               >
@@ -488,6 +534,7 @@ export function AdminPanel() {
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 }

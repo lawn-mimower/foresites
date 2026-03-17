@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { showToast } from "./Toast";
+import { API_BASE } from "./config/api";
 
 export function Logout() {
   const navigate = useNavigate();
@@ -13,7 +14,7 @@ export function Logout() {
         if (token) {
           // Call logout endpoint (optional - for server-side session cleanup)
           try {
-            await fetch('http://localhost:9999/api/auth/logout', {
+            await fetch(`${API_BASE}/auth/logout`, {
               method: 'POST',
               headers: {
                 'Authorization': `Bearer ${token}`,

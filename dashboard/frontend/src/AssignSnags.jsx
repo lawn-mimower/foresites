@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
 import { showToast } from "./Toast";
+import { API_BASE } from "./config/api";
 import "./css/meetzone.css";
 
 export function AssignSnags() {
@@ -13,7 +14,7 @@ export function AssignSnags() {
   const [assigning, setAssigning] = useState(false);
   const { apiCall, user } = useAuth();
 
-  const API = "http://localhost:9999/api";
+  const API = API_BASE;
 
   useEffect(() => {
     if (user?.site_id) {
