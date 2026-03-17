@@ -48,6 +48,23 @@ function assignerLabel(ctx) {
   return parts.join(' ') || 'Management';
 }
 
+function viewJobUrl(snagId) {
+  return `${FRONTEND_URL}/assignedjobs?highlight=${snagId}`;
+}
+
+/**
+ * Sanitize text for use inside a Meta template parameter.
+ * Meta rules: no newline/tab, no 4+ consecutive spaces.
+ * Formatting markers (*_~`) render literally in params, so strip them.
+ */
+function sanitizeParam(text) {
+  if (!text) return '-';
+  return String(text)
+    .replace(/[\n\r\t]/g, ' ')
+    .replace(/ {4,}/g, '   ')
+    .replace(/[*_~`]/g, '');
+}
+
 // ── Low-level senders ──
 
 /**
@@ -193,22 +210,23 @@ async function sendAssignmentNotification(phone, ctx) {
   const pLabel = `${priorityEmoji(ctx.priority)} ${formatPriority(ctx.priority)}`;
   const category = formatCategory(ctx.category);
   const remarksBlock = ctx.remarks
-    ? `Remarks by *${assigner}*:\n"${ctx.remarks}"`
-    : '—';
+    ? `Remarks by ${assigner}: "${sanitizeParam(ctx.remarks)}"`
+    : '-';
 
   const result = await sendTemplateMessage(phone, 'foresites_snag_assigned', [
-    ctx.username || 'Team member',     // {{1}}
-    assigner,                           // {{2}}
-    snagId,                             // {{3}}
-    pLabel,                             // {{4}}
-    ctx.feedback || 'No description',   // {{5}}
-    ctx.siteName || 'N/A',             // {{6}}
-    category,                           // {{7}}
-    remarksBlock,                       // {{8}}
+    sanitizeParam(ctx.username || 'Team member'),  // {{1}}
+    sanitizeParam(assigner),                        // {{2}}
+    snagId,                                          // {{3}}
+    pLabel,                                          // {{4}}
+    sanitizeParam(ctx.feedback || 'No description'), // {{5}}
+    sanitizeParam(ctx.siteName || 'N/A'),           // {{6}}
+    sanitizeParam(category),                         // {{7}}
+    remarksBlock,                                    // {{8}}
   ], ctx.snagId);
 
   if (!result) {
-    await sendTextMessage(phone, buildAssignmentFallback(ctx));
+    const url = viewJobUrl(ctx.snagId);
+    await sendTextMessage(phone, buildAssignmentFallback(ctx) + `\n\nView Job: ${url}`);
   }
 }
 
@@ -219,24 +237,25 @@ async function sendAssignmentNotification(phone, ctx) {
  * Button param: {{1}}=snagId
  */
 async function sendRejectionNotification(phone, ctx) {
-  const assigner = `*${assignerLabel(ctx)}*`;
+  const assigner = assignerLabel(ctx);
   const snagId = formatSnagId(ctx.snagDbId);
   const pLabel = `${priorityEmoji(ctx.priority)} ${formatPriority(ctx.priority)}`;
   const category = formatCategory(ctx.category);
 
   const result = await sendTemplateMessage(phone, 'foresites_snag_rejected', [
-    ctx.username || 'Team member',                  // {{1}}
-    snagId,                                          // {{2}}
-    pLabel,                                          // {{3}}
-    ctx.siteName || 'N/A',                          // {{4}}
-    category,                                        // {{5}}
-    assigner,                                        // {{6}}
-    ctx.rejectionRemarks || 'No remarks provided',  // {{7}}
-    String(ctx.rejectionCount || 1),                // {{8}}
+    sanitizeParam(ctx.username || 'Team member'),                  // {{1}}
+    snagId,                                                         // {{2}}
+    pLabel,                                                         // {{3}}
+    sanitizeParam(ctx.siteName || 'N/A'),                          // {{4}}
+    sanitizeParam(category),                                        // {{5}}
+    sanitizeParam(assigner),                                        // {{6}}
+    sanitizeParam(ctx.rejectionRemarks || 'No remarks provided'),  // {{7}}
+    String(ctx.rejectionCount || 1),                                // {{8}}
   ], ctx.snagId);
 
   if (!result) {
-    await sendTextMessage(phone, buildRejectionFallback(ctx));
+    const url = viewJobUrl(ctx.snagId);
+    await sendTextMessage(phone, buildRejectionFallback(ctx) + `\n\nView Job: ${url}`);
   }
 }
 
@@ -253,21 +272,22 @@ async function sendEscalationNotification(phone, ctx) {
   const category = formatCategory(ctx.category);
   const remarks = ctx.escalationRemarks || ctx.remarks;
   const remarksBlock = remarks
-    ? `Escalation Remarks:\n"${remarks}"`
-    : '—';
+    ? `Escalation Remarks: "${sanitizeParam(remarks)}"`
+    : '-';
 
   const result = await sendTemplateMessage(phone, 'foresites_snag_escalation', [
-    ctx.username || 'Team member',  // {{1}}
-    assigner,                        // {{2}}
-    snagId,                          // {{3}}
-    pLabel,                          // {{4}}
-    ctx.siteName || 'N/A',          // {{5}}
-    category,                        // {{6}}
-    remarksBlock,                    // {{7}}
+    sanitizeParam(ctx.username || 'Team member'),  // {{1}}
+    sanitizeParam(assigner),                        // {{2}}
+    snagId,                                          // {{3}}
+    pLabel,                                          // {{4}}
+    sanitizeParam(ctx.siteName || 'N/A'),           // {{5}}
+    sanitizeParam(category),                         // {{6}}
+    remarksBlock,                                    // {{7}}
   ], ctx.snagId);
 
   if (!result) {
-    await sendTextMessage(phone, buildEscalationFallback(ctx));
+    const url = viewJobUrl(ctx.snagId);
+    await sendTextMessage(phone, buildEscalationFallback(ctx) + `\n\nView Job: ${url}`);
   }
 }
 
@@ -281,14 +301,15 @@ async function sendApprovalNotification(phone, ctx) {
   const category = formatCategory(ctx.category);
 
   const result = await sendTemplateMessage(phone, 'foresites_snag_approved', [
-    ctx.username || 'Team member',  // {{1}}
-    snagId,                          // {{2}}
-    ctx.siteName || 'N/A',          // {{3}}
-    category,                        // {{4}}
+    sanitizeParam(ctx.username || 'Team member'),  // {{1}}
+    snagId,                                          // {{2}}
+    sanitizeParam(ctx.siteName || 'N/A'),           // {{3}}
+    sanitizeParam(category),                         // {{4}}
   ], ctx.snagId);
 
   if (!result) {
-    await sendTextMessage(phone, buildClosureFallback(ctx));
+    const url = viewJobUrl(ctx.snagId);
+    await sendTextMessage(phone, buildClosureFallback(ctx) + `\n\nView Job: ${url}`);
   }
 }
 
