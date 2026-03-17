@@ -25,7 +25,7 @@ const s3 = new S3Client({
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 /**
- * Helper: Look up assignment with joined user phone, snag, and site info.
+ * Helper: Look up assignment with joined assignee, assigner, snag, and site info.
  * Used by notify/escalate endpoints to build WhatsApp messages.
  */
 async function getAssignmentContext(assignmentId) {
@@ -36,10 +36,14 @@ async function getAssignmentContext(assignmentId) {
       snag_id,
       site_id,
       assigned_user_id,
+      assigner_id,
       assigner_remarks,
       rejection_remarks,
-      assigned_user:website_user!assigned_user_id(username, phone_number),
-      snag(feedback, category),
+      rejection_count,
+      priority,
+      assigned_user:website_user!assigned_user_id(username, phone_number, designation),
+      assigner:website_user!assigner_id(username, designation),
+      snag(id, feedback, category),
       site(site_name)
     `)
     .eq('assignment_id', assignmentId)
@@ -48,13 +52,19 @@ async function getAssignmentContext(assignmentId) {
   if (error || !data) return null;
   return {
     assignmentId: data.assignment_id,
+    snagId: data.snag_id,
     username: data.assigned_user?.username || 'Team member',
     phone: data.assigned_user?.phone_number,
+    assignerName: data.assigner?.username || '',
+    assignerDesignation: data.assigner?.designation || '',
     siteName: data.site?.site_name || '',
     category: data.snag?.category || '',
     feedback: data.snag?.feedback || '',
+    snagDbId: data.snag?.id || '',
     remarks: data.assigner_remarks || '',
     rejectionRemarks: data.rejection_remarks || '',
+    rejectionCount: data.rejection_count || 0,
+    priority: data.priority || '',
   };
 }
 
@@ -588,25 +598,11 @@ Router.post('/notify', authenticateToken, async (req, res) => {
     }
 
     if (type === 'assign') {
-      await sendAssignmentNotification(ctx.phone, {
-        username: ctx.username,
-        siteName: ctx.siteName,
-        category: ctx.category,
-        remarks: ctx.remarks,
-        assignmentId: assignment_id,
-      });
+      await sendAssignmentNotification(ctx.phone, ctx);
     } else if (type === 'reject') {
-      await sendRejectionNotification(ctx.phone, {
-        username: ctx.username,
-        siteName: ctx.siteName,
-        rejectionRemarks: ctx.rejectionRemarks,
-        assignmentId: assignment_id,
-      });
+      await sendRejectionNotification(ctx.phone, ctx);
     } else if (type === 'approve') {
-      await sendApprovalNotification(ctx.phone, {
-        username: ctx.username,
-        siteName: ctx.siteName,
-      });
+      await sendApprovalNotification(ctx.phone, ctx);
     }
   } catch (err) {
     console.error('❌ Notification send error (fire-and-forget):', err.message);
@@ -630,10 +626,8 @@ Router.post('/escalate', authenticateToken, async (req, res) => {
     }
 
     await sendEscalationNotification(ctx.phone, {
-      username: ctx.username,
-      siteName: ctx.siteName,
-      remarks: escalation_remarks || ctx.remarks,
-      assignmentId: assignment_id,
+      ...ctx,
+      escalationRemarks: escalation_remarks || '',
     });
   } catch (err) {
     console.error('❌ Escalation send error (fire-and-forget):', err.message);
