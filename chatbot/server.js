@@ -1,13 +1,12 @@
 const express = require('express'); 
 const app = express(); 
-const mongoose = require('mongoose'); 
 const dotenv = require('dotenv'); 
 dotenv.config(); 
 const chatbotRoutes = require('./route.js');
+const { supabase } = require('./db');
 
 // Connection details
-const PORT = process.env.PORT ;
-const MONGO_URI = process.env.MONGO_URI;
+const PORT = process.env.PORT;
 
 app.use(express.json());
 
@@ -22,13 +21,10 @@ app.use((req, res, next) => {
 // Routes
 app.use('/api', chatbotRoutes);
 
-// MongoDB Connection
-mongoose.connect(MONGO_URI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-})
-.then(() => console.log('✅ Connected to MongoDB'))
-.catch(err => console.error('❌ MongoDB connection error:', err));
+// Supabase Connection Test
+supabase.auth.getSession()
+    .then(() => console.log('✅ Connected to Supabase'))
+    .catch(err => console.error('❌ Supabase connection error:', err));
 
 // Start server
 app.listen(PORT, () => {

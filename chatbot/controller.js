@@ -5,12 +5,8 @@ const fsPromises = require('fs').promises;
 const path = require('path');
 const dotenv = require('dotenv');
 const { createObjectCsvWriter } = require('csv-writer');
-const { uploadToS3 } = require('./s3');
-
-// Models
-const Feedback = require('../chatbot/Models/userfbschema');
-const SitenameModel = require('../chatbot/Models/sitename');
-const PassphraseModel = require('../chatbot/Models/passphrase');
+const { uploadToS3, getS3Url } = require('./s3');
+const { supabase } = require('./db');
 
 // Environment Variables
 const accessToken = process.env.accessToken;
@@ -24,6 +20,43 @@ if (!accessToken || !phone_number_id) {
 // State Holders
 const userStates = {};
 const processedMessages = new Set();
+
+// -------------------- Helper Function --------------------
+// 🔍 LOOKUP USER BY PHONE NUMBER IN website_user TABLE
+async function getUserByPhoneNumber(phoneNumber) {
+  try {
+    // Extract only digits from phone number for matching
+    // DB stores numbers WITH country code (e.g. "918007953471"), so keep it
+    let cleanPhone = phoneNumber.replace(/\D/g, '');
+    console.log(`🔍 Looking up phone number: ${cleanPhone} in website_user table...`);
+    
+    // Query Supabase for the phone number in website_user table
+    const { data: user, error } = await supabase
+      .from('website_user')
+      .select('user_id, username, email, role, department, designation, phone_number')
+      .eq('phone_number', cleanPhone)
+      .single();
+    
+    if (error) {
+      if (error.code === 'PGRST116') {
+        // No matching row found - this is expected
+        console.log(`⚠️ No user found for phone: ${cleanPhone}`);
+        return null;
+      }
+      console.error('❌ Error querying website_user:', error);
+      return null;
+    }
+    
+    if (user) {
+      console.log(`✅ User found: ${user.username} (ID: ${user.user_id})`);
+    }
+    
+    return user;
+  } catch (err) {
+    console.error('❌ getUserByPhoneNumber error:', err);
+    return null;
+  }
+}
 
 // -------------------- Helper Functions --------------------
 // 🎤 TRANSCRIBE VOICE AUDIO
@@ -103,8 +136,8 @@ async function sendText(to, body) {
 async function sendList(to, header, body, options = []) {
   try {
     const cleanOptions = options.map(o => ({
-      id: o.id,
-      title: o.title.substring(0, 24),
+      id: o.id || 'unknown',
+      title: (o.title || 'Unnamed').substring(0, 24),
     }));
 
     const payload = {
@@ -162,20 +195,27 @@ async function downloadMedia(mediaId, folderName, userName = 'anonymous') {
 
     // Upload to S3
     const bucketName = process.env.S3_BUCKET_NAME;
+    console.log(`🪣 S3_BUCKET_NAME: ${bucketName}`);
+    
     if (bucketName) {
       try {
+        console.log(`📤 Uploading ${folderName} to S3 bucket: ${bucketName}`);
         const s3Key = await uploadToS3(filePath, bucketName, `${folderName}/`);
-        console.log(`✅ Uploaded to S3: ${s3Key}`);
-        // Return S3 key instead of local path
-        return s3Key;
+        console.log(`✅ Successfully uploaded to S3. Key: ${s3Key}`);
+        
+        // Convert S3 key to full S3 URL
+        const s3Url = getS3Url(s3Key, bucketName);
+        console.log(`🔗 S3 URL: ${s3Url}`);
+        
+        // Return full S3 URL for database storage
+        return s3Url;
       } catch (s3Error) {
-        console.error('❌ S3 upload error, using local path:', s3Error.message);
-        // Fallback to local path if S3 upload fails
-        return `/uploads/${folderName}/${filename}`;
+        console.error('❌ S3 upload failed:', s3Error.message);
+        console.error('❌ Stack:', s3Error.stack);
+        throw s3Error;  // Re-throw to fail instead of falling back
       }
     } else {
-      console.warn('⚠️ S3_BUCKET_NAME not set, using local storage');
-      return `/uploads/${folderName}/${filename}`;
+      throw new Error('S3_BUCKET_NAME not configured in environment variables');
     }
   } catch (err) {
     console.error('❌ downloadMedia error:', err.response?.data || err.message);
@@ -186,34 +226,427 @@ async function downloadMedia(mediaId, folderName, userName = 'anonymous') {
 // -------------------- Steps --------------------
 const steps = {
   askName: async (from, user, msgObj, text) => {
-    user.feedback.name = text;
+    user.feedback.reporter_name = text;
+    user.feedback.user_id = user.registeredUser?.user_id || null; // Set user_id if registered, null for new users
     user.step = 'askSite';
-    const sites = await SitenameModel.find({}).limit(20).lean();
-    const opts = sites.length
-      ? sites.map(s => ({ id: s.name, title: s.name }))
+    
+    // Fetch sites from Supabase
+    const { data: sites, error } = await supabase.from('site').select('id, site_name').limit(20);
+    
+    if (error) {
+      console.error('❌ Error fetching sites:', error);
+      return sendText(from, '⚠️ Error loading sites. Please try again.');
+    }
+    
+    console.log('📍 Sites fetched:', sites);
+    
+    const opts = sites && sites.length > 0
+      ? sites.map(s => ({ id: s.site_name, title: s.site_name }))
       : [{ id: 'Site Alpha', title: 'Site Alpha' }];
+    
+    console.log('📋 Options to display:', opts);
     await sendList(from, 'Site Name', 'Please choose your site name:', opts);
   },
 
+  // ========== MAIN MENU HANDLER ==========
+  awaitMainMenuChoice: async (from, user, msgObj, text) => {
+    if (text === 'report_snag') {
+      // Start the snag reporting flow
+      user.step = 'reportSnag';
+      await steps.reportSnag(from, user);
+    } else if (text === 'view_snags') {
+      // View snags flow
+      user.step = 'viewSnags';
+      await steps.viewSnags(from, user);
+    } else if (text === 'add_todo') {
+      // Add todo flow
+      user.step = 'addTodoItem';
+      await steps.addTodoItem(from, user);
+    } else if (text === 'view_todos') {
+      // View todos flow
+      user.step = 'viewTodos';
+      await steps.viewTodos(from, user);
+    } else if (text === 'update_todo') {
+      // Update todo flow
+      user.step = 'updateTodoList';
+      await steps.updateTodoList(from, user);
+    } else {
+      await sendText(from, '⚠️ Invalid choice. Please select from the menu.');
+    }
+  },
+
+  reportSnag: async (from, user) => {
+    // Start the regular snag reporting flow
+    user.step = 'askSite';
+    await sendText(from, '📝 Let\'s report a snag. Please select your site:');
+    
+    // Fetch and show sites
+    const { data: sites, error } = await supabase.from('site').select('id, site_name').limit(20);
+    
+    if (error) {
+      console.error('❌ Error fetching sites:', error);
+      return sendText(from, '⚠️ Error loading sites. Please try again.');
+    }
+    
+    console.log('📍 Sites fetched:', sites);
+    
+    const opts = sites && sites.length > 0
+      ? sites.map(s => ({ id: s.site_name, title: s.site_name }))
+      : [{ id: 'Site Alpha', title: 'Site Alpha' }];
+    
+    console.log('📋 Options to display:', opts);
+    await sendList(from, 'Site Name', 'Please choose your site name:', opts);
+  },
+
+  viewSnags: async (from, user) => {
+    try {
+      // Fetch user's snags from database
+      const userId = user.feedback.user_id;
+      
+      const { data: snags, error } = await supabase
+        .from('snag')
+        .select('id, category, feedback_type, status, created_at')
+        .eq('phone_number', from.replace(/\D/g, '').slice(-10))
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('❌ Error fetching snags:', error);
+        return sendText(from, '⚠️ Error loading your snags.');
+      }
+      
+      if (!snags || snags.length === 0) {
+        await sendText(from, '📋 You have no snags recorded yet.');
+      } else {
+        let message = `📋 Your Snags (${snags.length}):\n\n`;
+        snags.forEach((snag, index) => {
+          const date = new Date(snag.created_at).toLocaleDateString();
+          message += `${index + 1}. ${snag.category} - ${snag.status} (${date})\n`;
+        });
+        await sendText(from, message);
+      }
+      
+      user.step = 'awaitMainMenuChoice';
+      await sendText(from, '\n\nWhat would you like to do next?');
+      await sendList(from, 'Main Menu', 'Choose an option:', [
+        { id: 'report_snag', title: 'Report a Snag' },
+        { id: 'view_snags', title: 'View My Snags' },
+        { id: 'add_todo', title: 'Add to Todo List' },
+        { id: 'view_todos', title: 'View Pending Todos' },
+        { id: 'update_todo', title: 'Mark Todo Complete' },
+      ]);
+    } catch (err) {
+      console.error('❌ viewSnags error:', err);
+      await sendText(from, '⚠️ Error loading your snags. Please try again.');
+    }
+  },
+
+  viewTodos: async (from, user) => {
+    try {
+      // Fetch user's pending todos from database
+      const userId = user.feedback.user_id;
+      
+      const { data: todos, error } = await supabase
+        .from('todo')
+        .select('id, action_item, status, open_date, expected_closing_date, notes')
+        .eq('user_id', userId)
+        .eq('status', 'pending')
+        .order('expected_closing_date', { ascending: true });
+      
+      if (error) {
+        console.error('❌ Error fetching todos:', error);
+        return sendText(from, '⚠️ Error loading your todo list.');
+      }
+      
+      if (!todos || todos.length === 0) {
+        await sendText(from, '✓ No pending todo items.');
+      } else {
+        let message = `* Pending Todos (${todos.length})\n\n`;
+        todos.forEach((todo, index) => {
+          const openDate = todo.open_date ? new Date(todo.open_date).toLocaleDateString() : 'N/A';
+          const closeDate = todo.expected_closing_date ? new Date(todo.expected_closing_date).toLocaleDateString() : 'N/A';
+          
+          message += `${index + 1}. ${todo.action_item}\n`;
+          message += `   Start: ${openDate} | Due: ${closeDate}\n`;
+          if (todo.notes) {
+            message += `   Note: ${todo.notes}\n`;
+          }
+          message += `\n`;
+        });
+        await sendText(from, message);
+      }
+      
+      user.step = 'awaitMainMenuChoice';
+      await sendText(from, 'What would you like to do next?');
+      await sendList(from, 'Main Menu', 'Choose an option:', [
+        { id: 'report_snag', title: 'Report a Snag' },
+        { id: 'view_snags', title: 'View My Snags' },
+        { id: 'add_todo', title: 'Add to Todo List' },
+        { id: 'view_todos', title: 'View Pending Todos' },
+        { id: 'update_todo', title: 'Mark Todo Complete' },
+      ]);
+    } catch (err) {
+      console.error('❌ viewTodos error:', err);
+      await sendText(from, '⚠️ Error loading your todos. Please try again.');
+    }
+  },
+
+  updateTodoList: async (from, user) => {
+    try {
+      // Fetch user's pending todos for selection
+      const userId = user.feedback.user_id;
+      
+      const { data: todos, error } = await supabase
+        .from('todo')
+        .select('id, action_item, expected_closing_date')
+        .eq('user_id', userId)
+        .eq('status', 'pending')
+        .order('expected_closing_date', { ascending: true });
+      
+      if (error) {
+        console.error('❌ Error fetching todos:', error);
+        return sendText(from, '⚠️ Error loading your todos.');
+      }
+      
+      if (!todos || todos.length === 0) {
+        await sendText(from, '✓ No pending todos to complete.');
+        user.step = 'awaitMainMenuChoice';
+        await sendList(from, 'Main Menu', 'What would you like to do?', [
+          { id: 'report_snag', title: 'Report a Snag' },
+          { id: 'view_snags', title: 'View My Snags' },
+          { id: 'add_todo', title: 'Add to Todo List' },
+          { id: 'view_todos', title: 'View Pending Todos' },
+          { id: 'update_todo', title: 'Mark Todo Complete' },
+        ]);
+        return;
+      }
+      
+      // Create list of todos for selection
+      const todoOptions = todos.map(todo => ({
+        id: todo.id.toString(),
+        title: todo.action_item.substring(0, 24),
+      }));
+      
+      user.step = 'awaitTodoSelection';
+      user.pendingTodos = todos; // Store todos for reference
+      await sendList(from, 'Mark Complete', 'Select a todo to mark as completed:', todoOptions);
+    } catch (err) {
+      console.error('❌ updateTodoList error:', err);
+      await sendText(from, '⚠️ Error. Please try again.');
+    }
+  },
+
+  awaitTodoSelection: async (from, user, msgObj, text) => {
+    try {
+      // Find the selected todo
+      const selectedTodo = user.pendingTodos.find(t => t.id.toString() === text);
+      
+      if (!selectedTodo) {
+        return sendText(from, '⚠️ Invalid selection. Please try again.');
+      }
+      
+      // Update the todo status to completed
+      const { data: updated, error } = await supabase
+        .from('todo')
+        .update({ status: 'completed', closed_date: new Date().toISOString() })
+        .eq('id', selectedTodo.id)
+        .select()
+        .single();
+      
+      if (error) {
+        console.error('❌ Error updating todo:', error);
+        return sendText(from, '⚠️ Error marking todo complete. Please try again.');
+      }
+      
+      console.log('✅ Todo marked as completed:', updated);
+      await sendText(from, `✅ Great! "${selectedTodo.action_item}" is now complete!`);
+      
+      user.step = 'awaitMainMenuChoice';
+      await sendText(from, '\n\nWhat would you like to do next?');
+      await sendList(from, 'Main Menu', 'Choose an option:', [
+        { id: 'report_snag', title: 'Report a Snag' },
+        { id: 'view_snags', title: 'View My Snags' },
+        { id: 'add_todo', title: 'Add to Todo List' },
+        { id: 'view_todos', title: 'View Pending Todos' },
+        { id: 'update_todo', title: 'Mark Todo Complete' },
+      ]);
+      
+      // Clear pending todos
+      delete user.pendingTodos;
+    } catch (err) {
+      console.error('❌ awaitTodoSelection error:', err);
+      await sendText(from, '⚠️ Error. Please try again.');
+    }
+  },
+
+  addTodoItem: async (from, user) => {
+    try {
+      user.step = 'awaitTodoActionItem';
+      user.todoData = {}; // Initialize todo data object
+      await sendText(from, '✅ Let\'s add a new todo item.\n\nWhat is the action item? (Type the task):');
+    } catch (err) {
+      console.error('❌ addTodoItem error:', err);
+      await sendText(from, '⚠️ Error. Please try again.');
+    }
+  },
+
+  awaitTodoActionItem: async (from, user, msgObj, text) => {
+    try {
+      user.todoData.action_item = text;
+      user.step = 'awaitTodoNotes';
+      await sendText(from, '📝 Any notes for this task? (Type notes or "skip"):');
+    } catch (err) {
+      console.error('❌ awaitTodoActionItem error:', err);
+      await sendText(from, '⚠️ Error. Please try again.');
+    }
+  },
+
+  awaitTodoNotes: async (from, user, msgObj, text) => {
+    try {
+      user.todoData.notes = text.toLowerCase() === 'skip' ? null : text;
+      
+      // Auto-set open_date to today
+      const today = new Date();
+      user.todoData.open_date = today.toISOString();
+      
+      console.log(`📅 Open date set to today: ${today.toDateString()}`);
+      
+      user.step = 'awaitTodoClosingDate';
+      
+      // Generate next 7 days for selection
+      const closingDateOptions = [];
+      for (let i = 1; i <= 7; i++) {
+        const futureDate = new Date(today);
+        futureDate.setDate(futureDate.getDate() + i);
+        const dateStr = futureDate.toISOString().split('T')[0];
+        const dateDisplay = futureDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+        closingDateOptions.push({ id: dateStr, title: dateDisplay });
+      }
+      
+      // Add custom date option
+      closingDateOptions.push({ id: 'custom_date', title: '📝 Enter Custom Date' });
+      
+      await sendList(from, 'Closing Date', 'When should this be completed by?', closingDateOptions);
+    } catch (err) {
+      console.error('❌ awaitTodoNotes error:', err);
+      await sendText(from, '⚠️ Error. Please try again.');
+    }
+  },
+
+  awaitTodoClosingDate: async (from, user, msgObj, text) => {
+    try {
+      // Check if it's a custom date selection
+      if (text === 'custom_date') {
+        user.step = 'awaitCustomClosingDate';
+        return sendText(from, '📅 Enter the completion date (YYYY-MM-DD format):');
+      }
+      
+      // Otherwise, it's a selected date from the list
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (dateRegex.test(text)) {
+        user.todoData.expected_closing_date = new Date(text).toISOString();
+        // Now save the complete todo item
+        await steps.saveTodoItem(from, user);
+      } else {
+        return sendText(from, '⚠️ Invalid date format.');
+      }
+    } catch (err) {
+      console.error('❌ awaitTodoClosingDate error:', err);
+      await sendText(from, '⚠️ Error. Please try again.');
+    }
+  },
+
+  awaitCustomClosingDate: async (from, user, msgObj, text) => {
+    try {
+      // Validate custom date format
+      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+      if (dateRegex.test(text)) {
+        const customDate = new Date(text);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // Validate that the custom date is not in the past
+        if (customDate < today) {
+          return sendText(from, '⚠️ Date cannot be in the past. Please enter a future date (YYYY-MM-DD):');
+        }
+        
+        user.todoData.expected_closing_date = customDate.toISOString();
+        // Now save the complete todo item
+        await steps.saveTodoItem(from, user);
+      } else {
+        return sendText(from, '⚠️ Invalid date format. Please use YYYY-MM-DD format:');
+      }
+    } catch (err) {
+      console.error('❌ awaitCustomClosingDate error:', err);
+      await sendText(from, '⚠️ Error. Please try again.');
+    }
+  },
+
+  saveTodoItem: async (from, user) => {
+    try {
+      // Prepare data for Supabase 'todo' table
+      const todoData = {
+        user_id: user.feedback.user_id,
+        action_item: user.todoData.action_item,
+        notes: user.todoData.notes || null,
+        open_date: user.todoData.open_date || null,
+        expected_closing_date: user.todoData.expected_closing_date || null,
+        status: 'pending',
+        created_at: new Date().toISOString(),
+      };
+
+      const { data: saved, error } = await supabase
+        .from('todo')
+        .insert([todoData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ Error saving todo:', error);
+        await sendText(from, '⚠️ Error saving todo item. Please try again.');
+        return;
+      }
+
+      console.log('✅ Todo item saved:', saved);
+      await sendText(from, `✅ Todo added: *${user.todoData.action_item}*`);
+      
+      user.step = 'awaitMainMenuChoice';
+      await sendText(from, '\n\nWhat would you like to do next?');
+      await sendList(from, 'Main Menu', 'Choose an option:', [
+        { id: 'report_snag', title: 'Report a Snag' },
+        { id: 'view_snags', title: 'View My Snags' },
+        { id: 'add_todo', title: 'Add to Todo List' },
+        { id: 'view_todos', title: 'View Pending Todos' },
+        { id: 'update_todo', title: 'Mark Todo Complete' },
+      ]);
+      
+      // Clear todo data
+      delete user.todoData;
+    } catch (err) {
+      console.error('❌ saveTodoItem error:', err);
+      await sendText(from, '⚠️ Error saving todo item. Please try again.');
+    }
+  },
+
   askSite: async (from, user, msgObj, text) => {
-    const site = await SitenameModel.findOne({ name: { $regex: `^${text}$`, $options: 'i' } });
-    if (!site) return sendText(from, `⚠️ Site "${text}" not found. Try again.`);
+    // Query Supabase for site (case-insensitive)
+    const { data: siteData, error } = await supabase
+      .from('site')
+      .select('id, site_name')
+      .ilike('site_name', text)
+      .single();
+    
+    if (error || !siteData) {
+      return sendText(from, `⚠️ Site "${text}" not found. Try again.`);
+    }
 
-    user.feedback.sitename = site.name;
-    user.step = 'askPassphrase';
-    await sendText(from, `✅ Site verified: *${site.name}*\nEnter your passphrase:`);
+    user.feedback.site_id = siteData.id;
+    user.feedback.sitename = siteData.site_name;
+    user.feedback.code = 'skipped'; // Passphrase check skipped
+    await sendText(from, `✅ Site verified: *${siteData.site_name}*`);
+    await steps.askCategory(from, user);
   },
 
-  askPassphrase: async (from, user, msgObj, text) => {
-    const code = await PassphraseModel.findOne({
-      code: { $regex: `^${text}$`, $options: 'i' },
-      site: { $regex: `^${user.feedback.sitename}$`, $options: 'i' },
-    });
-
-    if (!code) return sendText(from, '❌ Invalid passphrase. Try again.');
-    user.feedback.code = code.code || text;
-    await steps.askCategory(from, user, msgObj, text);
-  },
+  // Passphrase check skipped - moved directly to category after site selection
 
   askCategory: async (from, user) => {
     const categories = [
@@ -253,9 +686,9 @@ const steps = {
     const mediaId = msgObj.audio?.id || msgObj.voice?.id || msgObj.audio_message?.id;
     if (!mediaId) return sendText(from, '⚠️ No audio found. Please resend.');
 
-    const localPath = await downloadMedia(mediaId, 'voice', user.feedback.name || 'user');
+    const localPath = await downloadMedia(mediaId, 'voice', user.feedback.reporter_name || 'user');
     if (!localPath) {
-      return sendText(from, '⚠️ Error downloading voice file. Please try again.');
+      return sendText(from, '⚠️ Error uploading voice file to S3. Please try again.');
     }
 
     user.feedback.voice_url = localPath;
@@ -309,37 +742,76 @@ const steps = {
   awaitImage: async (from, user, msgObj) => {
     const mediaId = msgObj.image?.id;
     if (!mediaId) return sendText(from, '⚠️ No image found. Please resend.');
-    const localPath = await downloadMedia(mediaId, 'images', user.feedback.name || 'user');
-    user.feedback.image = [localPath];
+    
+    const s3Key = await downloadMedia(mediaId, 'images', user.feedback.reporter_name || 'user');
+    if (!s3Key) {
+      return sendText(from, '⚠️ Error uploading image to S3. Please try again.');
+    }
+    
+    user.feedback.image = [s3Key];
     user.step = 'saveFeedback';
     await steps.saveFeedback(from, user);
   },
 
-// 🧾 SAVE FEEDBACK + Fully Standardized CSV Integration (with newline fix)
+// 🧾 SAVE FEEDBACK TO SUPABASE
 saveFeedback: async (from, user) => {
   try {
-    user.feedback.phone = from;
-    user.feedback.createdAt = new Date();
+    // Extract phone number (remove +, keep only digits)
+    const phoneNumber = from.replace(/\D/g, '');
 
-    const saved = await Feedback.create(user.feedback);
-    console.log('\n📝 Feedback Saved:', saved);
+    // Prepare data object for Supabase 'snag' table
+    const feedbackData = {
+      phone_number: parseInt(phoneNumber),
+      reporter_name: user.feedback.reporter_name,
+      site_id: user.feedback.site_id,
+      category: user.feedback.category,
+      feedback_type: user.feedback.feedback_type,
+      feedback: user.feedback.feedback || null,
+      voice_url: user.feedback.voice_url || null,
+      transcription: user.feedback.transcription || null,
+      suggestion: user.feedback.solution || null,
+      image_url: user.feedback.image?.[0] || null,
+      status: 'pending',
+      created_at: new Date().toISOString(),
+    };
 
-    // --- Define Report Paths ---
+    // Insert into Supabase 'snag' table
+    const { data: saved, error } = await supabase
+      .from('snag')
+      .insert([feedbackData])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('❌ Error saving to Supabase:', error);
+      await sendText(from, '⚠️ Error saving feedback. Please try again later.');
+      return;
+    }
+
+    console.log('\n📝 Feedback Saved to Supabase:', saved);
+
+    // --- Define Report Paths (for CSV reporting) ---
     const { REPORTS_DIR, DAYWISE_CSV, SITEWISE_CSV } = require('../config/paths');
     if (!fs.existsSync(REPORTS_DIR)) fs.mkdirSync(REPORTS_DIR, { recursive: true });
 
     // --- Extract Required Fields ---
-    const createdAtISO = saved.createdAt.toISOString();
+    const createdAtISO = saved.created_at;
     const today = createdAtISO.split('T')[0];
-    const { sitename, category, resolved } = saved;
-    const feedbackId = saved._id.toString();
+    const { sitename, category } = user.feedback;
+    const feedbackId = saved.id.toString();
 
-    // --- Get Site Metadata ---
-    const siteDoc = await SitenameModel.findOne({ name: sitename });
-    const siteCode = siteDoc ? siteDoc.siteCode : 'N/A';
+    // --- Get Site Name (for reporting) ---
+    const { data: siteData } = await supabase
+      .from('site')
+      .select('site_name')
+      .eq('id', saved.site_id)
+      .single();
+
+    const siteCode = 'N/A'; // Not available in current schema
+    const siteName = siteData?.site_name || sitename;
 
     // ====================================================
-    // 1️⃣  APPEND TO DAYWISE CSV  (append-only per feedback)
+    // 1️⃣ APPEND TO DAYWISE CSV
     // ====================================================
     const dayHeaders = [
       'feedback_id',
@@ -364,14 +836,14 @@ saveFeedback: async (from, user) => {
       createdAtISO,
       today,
       siteCode,
-      sitename,
+      siteName,
       category,
-      resolved ? 'Yes' : 'No',
-      '', // resolvedAt
-      '', // time_to_resolve_hrs
+      'No',
+      '',
+      '',
     ].join(',');
 
-    // ✅ Fix: ensure newline before appending if last line doesn’t end with \n
+    // Append to CSV
     try {
       let needsNewline = true;
       const stats = fs.statSync(DAYWISE_CSV);
@@ -387,93 +859,7 @@ saveFeedback: async (from, user) => {
       fs.appendFileSync(DAYWISE_CSV, newDayRow + '\n', 'utf8');
     }
 
-    console.log('✅ Daywise CSV appended successfully (newline safe).');
-
-    // ====================================================
-    // 2️⃣  UPDATE SITEWISE CSV (aggregate per site)
-    // ====================================================
-    const siteHeaders = [
-      'date', 'site code', 'name', 'feedback_ids',
-      'safety_compliance_raised', 'design_conflicts_raised', 'resource_blockers_raised',
-      'workflow_issues_raised', 'miscellaneous_raised',
-      'safety_compliance_solved', 'design_conflicts_solved', 'resource_blockers_solved',
-      'workflow_issues_solved', 'miscellaneous_solved',
-      'total_raised', 'total_solved', 'total_pending',
-    ];
-
-    // Ensure CSV exists with headers
-    if (!fs.existsSync(SITEWISE_CSV)) {
-      fs.writeFileSync(SITEWISE_CSV, siteHeaders.join(',') + '\n', 'utf8');
-    }
-
-    // Parse CSV
-    const csvData = fs.readFileSync(SITEWISE_CSV, 'utf8').trim().split('\n');
-    const siteRows = csvData.length > 1 ? csvData.slice(1).map(line => line.split(',')) : [];
-    const headerIndex = Object.fromEntries(siteHeaders.map((h, i) => [h, i]));
-
-    // Find or create site row (match by both date AND site name)
-    let siteRow = siteRows.find(r => 
-      r[headerIndex['date']] === today && r[headerIndex['name']] === sitename
-    );
-
-    if (!siteRow) {
-      // Create new site row with default values
-      siteRow = Array(siteHeaders.length).fill('0');
-      siteRow[headerIndex['date']] = today;
-      siteRow[headerIndex['site code']] = siteCode;
-      siteRow[headerIndex['name']] = sitename;
-      siteRow[headerIndex['feedback_ids']] = feedbackId;
-      siteRows.push(siteRow);
-    } else {
-      // Add feedback ID to list if missing
-      const ids = siteRow[headerIndex['feedback_ids']]?.split('|').filter(Boolean) || [];
-      if (!ids.includes(feedbackId)) {
-        ids.push(feedbackId);
-        siteRow[headerIndex['feedback_ids']] = ids.join('|');
-      }
-    }
-
-    // --- Increment counts ---
-    const raisedKey = `${category}_raised`;
-    const solvedKey = `${category}_solved`;
-
-    if (headerIndex[raisedKey] !== undefined) {
-      siteRow[headerIndex[raisedKey]] = String(
-        (parseInt(siteRow[headerIndex[raisedKey]]) || 0) + 1
-      );
-    }
-
-    if (resolved && headerIndex[solvedKey] !== undefined) {
-      siteRow[headerIndex[solvedKey]] = String(
-        (parseInt(siteRow[headerIndex[solvedKey]]) || 0) + 1
-      );
-    }
-
-    // --- Recalculate totals ---
-    const raisedCols = siteHeaders.filter(h => h.endsWith('_raised'));
-    const solvedCols = siteHeaders.filter(h => h.endsWith('_solved'));
-
-    const totalRaised = raisedCols.reduce(
-      (sum, key) => sum + (parseInt(siteRow[headerIndex[key]]) || 0),
-      0
-    );
-    const totalSolved = solvedCols.reduce(
-      (sum, key) => sum + (parseInt(siteRow[headerIndex[key]]) || 0),
-      0
-    );
-
-    siteRow[headerIndex['total_raised']] = totalRaised.toString();
-    siteRow[headerIndex['total_solved']] = totalSolved.toString();
-    siteRow[headerIndex['total_pending']] = (totalRaised - totalSolved).toString();
-
-    // --- Write updated CSV back ---
-    const updatedCsv = [siteHeaders.join(',')]
-      .concat(siteRows.map(r => r.join(',')))
-      .join('\n')
-      .trim() + '\n';
-
-    fs.writeFileSync(SITEWISE_CSV, updatedCsv, 'utf8');
-    console.log('✅ Sitewise CSV updated successfully.');
+    console.log('✅ Daywise CSV appended successfully.');
 
     // --- Send confirmation ---
     await sendText(from, '🙏 Thank you! Your feedback has been saved successfully.');
@@ -484,11 +870,6 @@ saveFeedback: async (from, user) => {
     await sendText(from, '⚠️ Error saving feedback. Please try again later.');
   }
 }
-
-
-
-
-
 
 };
 
@@ -520,12 +901,44 @@ exports.receiveWhatsAppMessage = async (req, res) => {
     processedMessages.add(msgId);
     setTimeout(() => processedMessages.delete(msgId), 2 * 60 * 1000);
 
-    if (!userStates[from]) userStates[from] = { step: null, feedback: {} };
+    if (!userStates[from]) userStates[from] = { step: null, feedback: {}, registeredUser: null };
     const user = userStates[from];
 
-    if (!user.step && text?.toLowerCase() === 'hi') {
-      user.step = 'askName';
-      return sendText(from, '👋 Hi! Please enter your *name* to start:');
+    // 🔄 RESTART CONVERSATION - Check if user wants to restart at ANY point
+    const restartKeywords = ['hi', 'hey', 'hello'];
+    if (restartKeywords.includes(text?.toLowerCase())) {
+      // Reset user state
+      delete userStates[from];
+      userStates[from] = { step: null, feedback: {}, registeredUser: null };
+      const freshUser = userStates[from];
+      
+      // 🔍 Check if user exists in website_user table
+      const registeredUser = await getUserByPhoneNumber(from);
+      
+      if (registeredUser) {
+        // ✅ User found - greet with name and show main menu
+        freshUser.registeredUser = registeredUser;
+        freshUser.feedback.reporter_name = registeredUser.username;
+        freshUser.feedback.user_id = registeredUser.user_id;
+        freshUser.step = 'awaitMainMenuChoice';
+        
+        console.log(`👋 Greeting registered user: ${registeredUser.username}`);
+        await sendText(from, `👋 Welcome back, *${registeredUser.username}*! 🎉`);
+        
+        // Show main menu options
+        await sendList(from, 'Main Menu', 'What would you like to do?', [
+          { id: 'report_snag', title: 'Report a Snag' },
+          { id: 'view_snags', title: 'View My Snags' },
+          { id: 'add_todo', title: 'Add to Todo List' },
+          { id: 'view_todos', title: 'View Pending Todos' },
+          { id: 'update_todo', title: 'Mark Todo Complete' },
+        ]);
+      } else {
+        // ❌ User not registered - ask for name
+        freshUser.step = 'askName';
+        await sendText(from, '👋 Hi! Please enter your *name* to start:');
+      }
+      return;
     }
 
     if (!user.step) return sendText(from, '⚠️ Please type "Hi" to start.');

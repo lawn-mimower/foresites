@@ -96,4 +96,12 @@ function isS3Key(path) {
   return path && (path.startsWith('voice/') || path.startsWith('images/'));
 }
 
-module.exports = { uploadToS3, getSignedUrlForS3Object, isS3Key };
+// Helper function to generate public S3 URL
+function getS3Url(s3Key, bucketName = process.env.S3_BUCKET_NAME, region = process.env.AWS_REGION) {
+  if (!s3Key) return null;
+  // Format: https://bucket-name.s3.region.amazonaws.com/key
+  // Or: https://s3.region.amazonaws.com/bucket-name/key
+  return `https://${bucketName}.s3.${region}.amazonaws.com/${s3Key}`;
+}
+
+module.exports = { uploadToS3, getSignedUrlForS3Object, isS3Key, getS3Url };
