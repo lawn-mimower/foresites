@@ -26,6 +26,8 @@ Human-written notes that cannot be introspected from the database.
 - `acknowledged_at` — when Jr. Engineer acknowledged assignment via WhatsApp (sets status to in_progress)
 - `resolved_at` — when Sr. Engineer approved the resolution
 - `rejection_remarks` — reason Sr. Engineer rejected the proof (if status = 'rejected')
+- `rejection_count` — number of times this assignment has been rejected/sent back for revision. Incremented on explicit rejection AND on reassignment after closure. A snag is "under revision" when `rejection_count > 0` and the assignment is still active (`is_active = true`). To find all snags that have ever been rejected or sent back, query `rejection_count > 0`.
+- `is_active` — TRUE for the current assignment, FALSE for historical/deactivated ones. Only one assignment per snag should have `is_active = true`.
 
 ### todo
 - `action_item` — concrete daily/weekly target task

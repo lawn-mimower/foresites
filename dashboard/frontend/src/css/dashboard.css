@@ -4,7 +4,7 @@
    ============================================= */
 
 /* MAIN */
-.ss-main { max-width:1480px; margin:0 auto; padding:28px 28px 60px }
+.ss-main { width:100%; max-width:1480px; margin:0 auto; padding:28px 28px 60px; overflow-x:hidden; box-sizing:border-box }
 
 /* WELCOME */
 .ss-welcome { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:28px; padding-bottom:20px; border-bottom:2px solid var(--brand-black) }
@@ -114,11 +114,22 @@
 .ss-table tbody tr:hover { background:var(--surface) }
 .ss-table tbody tr:last-child td { border-bottom:none }
 .ss-snag-id { font-family:var(--font-mono); font-size:11px; color:var(--ink-400) }
-.ss-snag-title { font-weight:600; color:var(--brand-black); font-size:13px }
-.ss-tbl-foot { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; border-top:1px solid var(--rule); background:var(--surface) }
+.ss-snag-title { font-weight:600; color:var(--brand-black); font-size:13px; max-width:320px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:block }
+.ss-tbl-foot { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; border-top:1px solid var(--rule); background:var(--surface); flex-wrap:wrap; gap:12px }
 .ss-tbl-count { font-size:12px; color:var(--ink-400) }
 .ss-view-all { font-size:12px; font-weight:600; color:var(--brand-red); text-decoration:none; letter-spacing:.3px }
 .ss-view-all:hover { text-decoration:underline }
+
+/* PAGINATION */
+.ss-pagination { display:flex; align-items:center; gap:12px }
+.ss-page-size { display:flex; align-items:center; gap:6px }
+.ss-page-size label { font-size:12px; color:var(--ink-400); white-space:nowrap }
+.ss-page-size select { font-family:var(--font-body); font-size:12px; padding:4px 8px; border:1px solid var(--rule); background:var(--brand-white); cursor:pointer; outline:none }
+.ss-page-nav { display:flex; align-items:center; gap:2px }
+.ss-page-btn { padding:4px 10px; font-family:var(--font-body); font-size:12px; font-weight:600; background:var(--brand-white); color:var(--ink-600); border:1px solid var(--rule); cursor:pointer; transition:all .12s; line-height:1.4 }
+.ss-page-btn:hover { background:var(--surface) }
+.ss-page-btn.active { background:var(--brand-black); color:var(--brand-white); border-color:var(--brand-black) }
+.ss-page-btn:disabled { opacity:.4; cursor:not-allowed }
 
 /* RAISE MODAL */
 .ss-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:500; align-items:center; justify-content:center }

@@ -4,9 +4,11 @@
 
 /* ─── MAIN CONTAINER ─────────────────────────────────── */
 .all-snags-page {
+  width: 100%;
   max-width: 1480px;
   margin: 0 auto;
   padding: 28px 28px 60px;
+  box-sizing: border-box;
 }
 
 /* ─── PAGE HEADER ─────────────────────────────────────── */
@@ -813,33 +815,98 @@
 }
 .empty-state-sub { font-size: 13px; color: var(--ink-400); }
 
-/* ─── LIST VIEW OVERRIDES ─────────────────────────────── */
-.list-view .snag-card {
-  flex-direction: row;
-  align-items: stretch;
+/* ─── LIST VIEW TABLE ─────────────────────────────────── */
+.snag-list-wrap {
+  background: var(--brand-white);
+  border: 1px solid var(--rule, #DCDCDC);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
-.list-view .card-accent {
-  width: 4px;
-  height: auto;
-  flex-shrink: 0;
+.snag-list-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 820px;
 }
-.list-view .card-body-list {
-  flex: 1;
+.snag-list-table thead { background: var(--brand-black); }
+.snag-list-table th {
+  padding: 11px 14px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #888;
+  text-align: left;
+  white-space: nowrap;
+}
+.snag-list-table th:first-child { padding-left: 20px; color: #666; }
+.snag-list-table td {
+  padding: 11px 14px;
+  font-size: 13px;
+  color: var(--ink-600);
+  border-bottom: 1px solid var(--rule-light, #EFEFEF);
+  vertical-align: middle;
+}
+.snag-list-table td:first-child { padding-left: 20px; }
+.snag-list-table tbody tr { transition: background 0.1s; cursor: pointer; }
+.snag-list-table tbody tr:hover { background: var(--surface, #F5F5F5); }
+.snag-list-table tbody tr:last-child td { border-bottom: none; }
+.snag-list-table .list-snag-id { font-family: var(--font-mono); font-size: 11px; color: var(--ink-400); }
+.snag-list-table .list-snag-title {
+  font-weight: 600;
+  color: var(--brand-black);
+  font-size: 13px;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+
+/* ─── SNAG DETAIL MODAL (List view) ──────────────────── */
+.snag-detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 500;
   display: flex;
   align-items: center;
-  gap: 0;
-  padding: 14px 0;
+  justify-content: center;
 }
-.list-view .list-col { padding: 0 16px; }
-.list-view .list-col-id { min-width: 110px; flex-shrink: 0; }
-.list-view .list-col-title { flex: 1; }
-.list-view .list-col-tags { min-width: 180px; flex-shrink: 0; }
-.list-view .list-col-assign { min-width: 160px; flex-shrink: 0; }
-.list-view .list-col-due { min-width: 120px; flex-shrink: 0; }
-.list-view .list-col-actions { min-width: 140px; flex-shrink: 0; }
-.list-view .card-body { display: none; }
-.list-view .card-header { display: none; }
-.list-view .card-footer { display: none; }
+.snag-detail-modal {
+  background: var(--brand-white);
+  width: 640px;
+  max-width: 96vw;
+  max-height: 92vh;
+  overflow-y: auto;
+  border-top: 4px solid var(--brand-red);
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  animation: cardIn 0.25s ease both;
+  position: relative;
+}
+.snag-detail-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: var(--ink-400);
+  z-index: 1;
+  padding: 4px 8px;
+  line-height: 1;
+}
+.snag-detail-close:hover { color: var(--brand-black); }
+
+/* List view link */
+.snag-list-table .ss-view-all {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand-red);
+  text-decoration: none;
+  letter-spacing: 0.3px;
+}
+.snag-list-table .ss-view-all:hover { text-decoration: underline; }
 
 .due-cell { font-family: var(--font-mono); font-size: 11px; }
 

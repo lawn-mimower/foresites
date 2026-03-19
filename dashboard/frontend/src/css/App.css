@@ -163,6 +163,9 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--ink-300); }
 ::-webkit-scrollbar-thumb:hover { background: var(--ink-400); }
 
+/* Force persistent scrollbar so viewport width never shifts */
+html { overflow-y: scroll; }
+
 /* App container — flat, no gradient */
 .App {
   min-height: 100vh;

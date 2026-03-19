@@ -254,14 +254,15 @@ ORDER BY cnt DESC
 LIMIT 10
 ```
 
-**Q3 — Rejected assignments (quality of fixes)**
+**Q3 — Rejected / revised assignments (quality of fixes)**
 ```sql
-SELECT u.username, COUNT(*) AS rejections, sa.rejection_remarks
+SELECT u.username, SUM(sa.rejection_count) AS total_rejections,
+       COUNT(*) AS assignments_affected, sa.rejection_remarks
 FROM snag_assignment sa
 JOIN website_user u ON sa.assigned_user_id = u.user_id
-WHERE sa.status = 'rejected'
+WHERE sa.rejection_count > 0
 GROUP BY u.username, sa.rejection_remarks
-ORDER BY rejections DESC
+ORDER BY total_rejections DESC
 LIMIT 15
 ```
 

@@ -7,7 +7,6 @@ import AssignModal from "./components/AssignModal";
 import {
   formatSnagId,
   getCategoryVertical,
-  getPriority,
   deriveSnagDisplayStatus,
   getGreeting,
 } from "./utils/snagHelpers";
@@ -20,8 +19,6 @@ const API = API_BASE;
 
 /* ─── SVG ICONS ──────────────────────────────────────────── */
 const IconSearch = () => <svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>;
-const IconWarn = () => <svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>;
-const IconCheck = () => <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>;
 const IconPlus = () => <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>;
 
 const VERTICALS = [
@@ -41,6 +38,8 @@ const SEARCH_CHIPS = [
   "What did the team complete yesterday?",
   "Who has the highest open snag count?",
 ];
+
+const PROJECT_WIDE_DEPTS = ['administration', 'maintenance', 'safety', 'store', 'site development', 'ugwt & stp'];
 
 /* ─── SPARKLINE ──────────────────────────────────────────── */
 function Sparkline({ data }) {
@@ -154,8 +153,21 @@ export default function ForesitesDashboard() {
   const [siteUsers, setSiteUsers] = useState([]);
 
   // UI state
-  const [selectedSiteId, setSelectedSiteId] = useState(user?.site_id || "");
-  const [activeVertical, setActiveV] = useState("all");
+  const isSuperAdminUser = isSuperAdmin?.() ?? false;
+  const isAdminUser = isAdmin?.() ?? false;
+  const userDept = (user?.department || '').toLowerCase();
+  const isProjectWideDept = PROJECT_WIDE_DEPTS.includes(userDept);
+
+  const getDefaultVertical = () => {
+    if (userDept === 'safety') return 'safety';
+    if (userDept === 'store') return 'inventory';
+    return 'all';
+  };
+
+  const [selectedSiteId, setSelectedSiteId] = useState(
+    isSuperAdminUser ? "" : (isProjectWideDept ? "" : (user?.site_id || ""))
+  );
+  const [activeVertical, setActiveV] = useState(getDefaultVertical);
   const [searchQ, setSearchQ] = useState("");
   const [searchAnswer, setSearchAnswer] = useState(null);
   const [searching, setSearching] = useState(false);
@@ -163,10 +175,12 @@ export default function ForesitesDashboard() {
   const [assignModalSnag, setAssignModalSnag] = useState(null);
   const [time, setTime] = useState(new Date());
   const [syncTime, setSyncTime] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
-  const isSuperAdminUser = isSuperAdmin?.() ?? false;
-  const isAdminUser = isAdmin?.() ?? false;
-  const effectiveSiteId = isSuperAdminUser ? selectedSiteId : (user?.site_id || "");
+  const effectiveSiteId = isSuperAdminUser
+    ? selectedSiteId
+    : (isProjectWideDept ? "" : (user?.site_id || ""));
 
   /* Clock */
   useEffect(() => {
@@ -287,8 +301,9 @@ export default function ForesitesDashboard() {
   if (activeVertical !== "all") {
     displayedSnags = displayedSnags.filter(s => getCategoryVertical(s.category) === activeVertical);
   }
-  // Limit to 10 for dashboard
-  const tableSnags = displayedSnags.slice(0, 10);
+  // Pagination
+  const totalPages = Math.ceil(displayedSnags.length / pageSize);
+  const tableSnags = displayedSnags.slice((page - 1) * pageSize, page * pageSize);
 
   /* ── Category counts from metrics ── */
   const getCategoryCount = (verticalKey) => {
@@ -300,11 +315,47 @@ export default function ForesitesDashboard() {
     }, 0);
   };
 
-  const getCriticalCount = (verticalKey) => {
-    return displayedSnags.filter(s =>
-      getCategoryVertical(s.category) === verticalKey && getPriority(s.category) === "critical" && s.status !== "resolved"
-    ).length;
+  /* ── Filtered metrics (scoped to active vertical) ── */
+  const isFiltered = activeVertical !== "all";
+  const verticalLabel = isFiltered ? VERTICALS.find(v => v.key === activeVertical)?.label || '' : '';
+  const computeFilteredMetrics = () => {
+    const now24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const todayStr = new Date().toISOString().split("T")[0];
+    const reported = displayedSnags.filter(s => new Date(s.created_at) >= now24h).length;
+    const completed = displayedSnags.filter(s => s.status === 'resolved').length;
+    let dueToday = 0, overdue = 0;
+    displayedSnags.forEach(s => {
+      (assignments[s.id] || []).forEach(a => {
+        if (!a.due_date) return;
+        const d = new Date(a.due_date).toISOString().split("T")[0];
+        if (d === todayStr && a.status !== 'resolved') dueToday++;
+        if (d < todayStr && a.status !== 'resolved') overdue++;
+      });
+    });
+    return { reported, completed, dueToday, overdue };
   };
+  const fm = isFiltered ? computeFilteredMetrics() : null;
+  const metricReported = isFiltered ? fm.reported : (metrics?.reported_24h || 0);
+  const metricCompleted = isFiltered ? fm.completed : (metrics?.completed_24h || 0);
+  const metricDueToday = isFiltered ? fm.dueToday : (metrics?.due_today || 0);
+  const metricOverdue = isFiltered ? fm.overdue : (metrics?.overdue || 0);
+
+  // Compute sparklines for filtered view (7-day breakdown by created_at)
+  const computeFilteredSparkline = () => {
+    const now = new Date();
+    return Array.from({ length: 7 }, (_, i) => {
+      const dayStart = new Date(now);
+      dayStart.setDate(dayStart.getDate() - (6 - i));
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+      return displayedSnags.filter(s => {
+        const d = new Date(s.created_at);
+        return d >= dayStart && d < dayEnd;
+      }).length;
+    });
+  };
+  const filteredSpark = isFiltered ? computeFilteredSparkline() : null;
 
   /* ── Site name for context ── */
   const siteName = effectiveSiteId
@@ -369,7 +420,7 @@ export default function ForesitesDashboard() {
       {isSuperAdminUser && (
         <div className="ss-site-picker">
           <label>Site</label>
-          <select value={selectedSiteId} onChange={(e) => setSelectedSiteId(e.target.value)}>
+          <select value={selectedSiteId} onChange={(e) => { setSelectedSiteId(e.target.value); setPage(1); }}>
             <option value="">All Sites</option>
             {sites.map(s => <option key={s.id} value={s.id}>{s.site_name}</option>)}
           </select>
@@ -380,22 +431,16 @@ export default function ForesitesDashboard() {
       <div className="ss-verticals">
         {VERTICALS.map(v => {
           const count = getCategoryCount(v.key);
-          const critCount = getCriticalCount(v.key);
           return (
             <div
               key={v.key}
               className={`ss-vcard ${activeVertical === v.key ? "active" : ""}`}
-              onClick={() => setActiveV(activeVertical === v.key ? "all" : v.key)}
+              onClick={() => { setActiveV(activeVertical === v.key ? "all" : v.key); setPage(1); }}
             >
               <div className="ss-vcard-top" />
               <div className="ss-vcard-body">
                 <div className="ss-vcard-icon-row">
                   <div className="ss-vcard-icon">{v.icon}</div>
-                  {critCount > 0 ? (
-                    <div className="ss-vcrit"><IconWarn />{critCount} Critical</div>
-                  ) : (
-                    <div className="ss-vcrit none"><IconCheck />0 Critical</div>
-                  )}
                 </div>
                 <div className="ss-vname">{v.label}</div>
                 <div className="ss-vcount">{count}</div>
@@ -408,29 +453,31 @@ export default function ForesitesDashboard() {
 
       {/* Metrics */}
       <div className="ss-metrics-hd">
-        <div className="ss-section-title">Live Performance — Last 24 Hours</div>
+        <div className="ss-section-title">
+          {isFiltered ? `${verticalLabel} Performance` : "Live Performance — Last 24 Hours"}
+        </div>
         <div className="ss-sync">{syncTime}</div>
       </div>
       <div className="ss-metrics">
         <MetricCard
-          accentCls="m-red" label="Snags Reported" value={metrics?.reported_24h || 0}
-          desc="New snags logged in the last 24 hrs"
-          sparkData={metrics?.sparklines?.reported || [0,0,0,0,0,0,0]}
+          accentCls="m-red" label="Snags Reported" value={metricReported}
+          desc={isFiltered ? `New ${verticalLabel.toLowerCase()} snags in 24 hrs` : "New snags logged in the last 24 hrs"}
+          sparkData={isFiltered ? filteredSpark : (metrics?.sparklines?.reported || [0,0,0,0,0,0,0])}
         />
         <MetricCard
-          accentCls="m-green" label="Snags Completed" value={metrics?.completed_24h || 0}
-          desc="Reviewed and closed in last 24 hrs"
-          sparkData={metrics?.sparklines?.completed || [0,0,0,0,0,0,0]}
+          accentCls="m-green" label={isFiltered ? "Resolved" : "Snags Completed"} value={metricCompleted}
+          desc={isFiltered ? `Total resolved ${verticalLabel.toLowerCase()} snags` : "Reviewed and closed in last 24 hrs"}
+          sparkData={isFiltered ? filteredSpark : (metrics?.sparklines?.completed || [0,0,0,0,0,0,0])}
         />
         <MetricCard
-          accentCls="m-amber" label="Due Today" value={metrics?.due_today || 0}
-          desc="Deadlines expiring today"
-          sparkData={metrics?.sparklines?.due || [0,0,0,0,0,0,0]}
+          accentCls="m-amber" label="Due Today" value={metricDueToday}
+          desc={isFiltered ? `${verticalLabel} deadlines expiring today` : "Deadlines expiring today"}
+          sparkData={isFiltered ? filteredSpark : (metrics?.sparklines?.due || [0,0,0,0,0,0,0])}
         />
         <MetricCard
-          accentCls="m-black" label="Overdue" value={metrics?.overdue || 0}
-          desc="Past due and unresolved"
-          sparkData={metrics?.sparklines?.overdue || [0,0,0,0,0,0,0]}
+          accentCls="m-black" label="Overdue" value={metricOverdue}
+          desc={isFiltered ? `Overdue ${verticalLabel.toLowerCase()} snags` : "Past due and unresolved"}
+          sparkData={isFiltered ? filteredSpark : (metrics?.sparklines?.overdue || [0,0,0,0,0,0,0])}
         />
       </div>
 
@@ -510,7 +557,35 @@ export default function ForesitesDashboard() {
           </tbody>
         </table>
         <div className="ss-tbl-foot">
-          <div className="ss-tbl-count">Showing {tableSnags.length} of {displayedSnags.length} snags</div>
+          <div className="ss-tbl-count">
+            Showing {Math.min((page - 1) * pageSize + 1, displayedSnags.length)}–{Math.min(page * pageSize, displayedSnags.length)} of {displayedSnags.length} snags
+          </div>
+          <div className="ss-pagination">
+            <div className="ss-page-size">
+              <label>Per page</label>
+              <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}>
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+            <div className="ss-page-nav">
+              <button className="ss-page-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>&lsaquo;</button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                .reduce((acc, p, idx, arr) => {
+                  if (idx > 0 && p - arr[idx - 1] > 1) acc.push('...');
+                  acc.push(p);
+                  return acc;
+                }, [])
+                .map((p, i) =>
+                  p === '...'
+                    ? <span key={`e${i}`} style={{ padding: '0 4px', color: 'var(--ink-400)', fontSize: 12 }}>&hellip;</span>
+                    : <button key={p} className={`ss-page-btn${p === page ? ' active' : ''}`} onClick={() => setPage(p)}>{p}</button>
+                )}
+              <button className="ss-page-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>&rsaquo;</button>
+            </div>
+          </div>
           <span className="ss-view-all" style={{ cursor: "pointer" }} onClick={() => navigate("/allfeedbacks")}>
             View All Snags &rarr;
           </span>

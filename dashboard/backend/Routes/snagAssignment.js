@@ -188,8 +188,25 @@ Router.post('/assignments', authenticateToken, requireAdmin, async (req, res) =>
       console.warn('⚠️ Error querying existing assignments (is_active column may be missing):', existingErr.message);
     }
 
+    // Track whether this is a reassignment (and if snag was resolved)
+    let inheritedRejectionCount = 0;
+    let wasResolved = false;
+
     if (existingAssignments && existingAssignments.length > 0) {
       inheritedPriority = existingAssignments[0].priority;
+
+      // Check if old assignment was resolved — reassignment after closure counts as rejection
+      const oldAssignment = existingAssignments[0];
+      const { data: oldFull } = await supabase
+        .from('snag_assignment')
+        .select('status, rejection_count')
+        .eq('assignment_id', oldAssignment.assignment_id)
+        .single();
+      if (oldFull) {
+        inheritedRejectionCount = (oldFull.rejection_count || 0);
+        wasResolved = oldFull.status === 'resolved';
+      }
+
       const ids = existingAssignments.map(a => a.assignment_id);
       const { error: deactivateErr } = await supabase
         .from('snag_assignment')
@@ -202,8 +219,24 @@ Router.post('/assignments', authenticateToken, requireAdmin, async (req, res) =>
       }
     }
 
+    // If snag was resolved, reopen it — reassignment means work isn't done
+    if (wasResolved) {
+      const { error: reopenErr } = await supabase
+        .from('snag')
+        .update({ status: 'pending' })
+        .eq('id', snag_id);
+      if (reopenErr) {
+        console.warn('⚠️ Error reopening snag:', reopenErr.message);
+      } else {
+        console.log('✅ Reopened resolved snag', snag_id, 'for reassignment');
+      }
+    }
+
     // Generate assignment_id as UUID
     const assignment_id = randomUUID();
+
+    // Reassignment after closure counts as a rejection
+    const newRejectionCount = wasResolved ? inheritedRejectionCount + 1 : inheritedRejectionCount;
 
     const assignmentData = {
       assignment_id,
@@ -213,6 +246,7 @@ Router.post('/assignments', authenticateToken, requireAdmin, async (req, res) =>
       assigner_id: req.user.user_id,
       status: 'in_progress',
       is_active: true,
+      rejection_count: newRejectionCount,
     };
 
     // Add priority (use provided, or inherit from previous assignment)
@@ -634,7 +668,8 @@ Router.post('/escalate', authenticateToken, async (req, res) => {
   }
 });
 
-// GET /last-updated — Returns the latest modification timestamp across snags and assignments
+// GET /last-updated — Returns a fingerprint that changes whenever snags or assignments change.
+// Uses status counts + latest timestamps so any mutation (reject, escalate, proof upload, etc.) is detected.
 Router.get('/last-updated', authenticateToken, async (req, res) => {
   try {
     const [snagResult, assignResult] = await Promise.all([
@@ -643,26 +678,33 @@ Router.get('/last-updated', authenticateToken, async (req, res) => {
         .select('created_at')
         .order('created_at', { ascending: false })
         .limit(1),
-      supabase
-        .from('snag_assignment')
-        .select('assigned_at, resolved_at')
-        .order('assigned_at', { ascending: false })
-        .limit(1),
+      supabase.rpc('get_assignment_fingerprint').maybeSingle(),
     ]);
 
-    const timestamps = [];
-
-    if (snagResult.data?.[0]?.created_at) {
-      timestamps.push(new Date(snagResult.data[0].created_at).getTime());
+    // Fallback if RPC doesn't exist: query directly
+    let fingerprint;
+    if (assignResult.error || !assignResult.data) {
+      // Direct query fallback
+      const { data: assignments } = await supabase
+        .from('snag_assignment')
+        .select('status, assigned_at, resolved_at')
+        .eq('is_active', true);
+      const counts = { open: 0, in_progress: 0, in_review: 0, resolved: 0, rejected: 0 };
+      let latestTs = 0;
+      (assignments || []).forEach(a => {
+        counts[a.status] = (counts[a.status] || 0) + 1;
+        if (a.assigned_at) latestTs = Math.max(latestTs, new Date(a.assigned_at).getTime());
+        if (a.resolved_at) latestTs = Math.max(latestTs, new Date(a.resolved_at).getTime());
+      });
+      const snagTs = snagResult.data?.[0]?.created_at ? new Date(snagResult.data[0].created_at).getTime() : 0;
+      latestTs = Math.max(latestTs, snagTs);
+      fingerprint = `${assignments?.length || 0}:${counts.open}:${counts.in_progress}:${counts.in_review}:${counts.resolved}:${counts.rejected}:${latestTs}`;
+    } else {
+      const snagTs = snagResult.data?.[0]?.created_at || '';
+      fingerprint = `${assignResult.data.fingerprint}:${snagTs}`;
     }
-    if (assignResult.data?.[0]) {
-      const a = assignResult.data[0];
-      if (a.assigned_at) timestamps.push(new Date(a.assigned_at).getTime());
-      if (a.resolved_at) timestamps.push(new Date(a.resolved_at).getTime());
-    }
 
-    const latest = timestamps.length > 0 ? new Date(Math.max(...timestamps)).toISOString() : null;
-    res.json({ last_updated: latest });
+    res.json({ last_updated: fingerprint });
   } catch (err) {
     console.error('Error fetching last-updated:', err);
     res.status(500).json({ error: 'Failed to fetch last-updated timestamp' });

@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { showToast } from "./Toast";
 import { API_BASE } from "./config/api";
-import { getAssignmentDisplayStatus } from "./utils/snagHelpers";
+import { getAssignmentDisplayStatus, getCategoryVertical } from "./utils/snagHelpers";
 import AssigneeCard from "./components/AssigneeCard";
 import AssignerCard from "./components/AssignerCard";
 import AssignModal from "./components/AssignModal";
@@ -21,6 +21,8 @@ export function AssignedJobs() {
   const [assignedByMe, setAssignedByMe] = useState([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState("newest");
   const [solutionInputs, setSolutionInputs] = useState({});
   const [proofFiles, setProofFiles] = useState({});
   const [proofPreviews, setProofPreviews] = useState({});
@@ -224,6 +226,7 @@ export function AssignedJobs() {
         showToast(newStatus === 'resolved' ? "Marked as resolved" : "Reopened", "success");
         invalidate(''); // bust all caches so Dashboard + All Snags stay in sync
         fetchAssignedByMe(true);
+        fetchAssignedJobs(true);
 
         // Send WhatsApp approval notification on close
         if (newStatus === 'resolved') {
@@ -255,11 +258,20 @@ export function AssignedJobs() {
 
   // ── Filtering ──
   const filteredJobs = () => {
-    const source = activeTab === "my-jobs" ? jobs : assignedByMe;
-    if (filter === "resolved") return source.filter((job) => job.status === "resolved");
-    if (filter === "open") return source.filter((job) => job.status === "open");
-    if (filter === "in_progress") return source.filter((job) => job.status === "in_progress");
-    if (filter === "in_review") return source.filter((job) => job.status === "in_review");
+    let source = activeTab === "my-jobs" ? jobs : assignedByMe;
+    if (filter === "resolved") source = source.filter((job) => job.status === "resolved");
+    else if (filter === "open") source = source.filter((job) => job.status === "open");
+    else if (filter === "in_progress") source = source.filter((job) => job.status === "in_progress");
+    else if (filter === "in_review") source = source.filter((job) => job.status === "in_review");
+    if (categoryFilter !== "all") {
+      source = source.filter((job) => getCategoryVertical(job.snag?.category) === categoryFilter);
+    }
+    // Sort by date
+    source = [...source].sort((a, b) => {
+      const dateA = new Date(a.assigned_at || a.created_at || 0);
+      const dateB = new Date(b.assigned_at || b.created_at || 0);
+      return sortOrder === "newest" ? dateB - dateA : dateA - dateB;
+    });
     return source;
   };
 
@@ -297,18 +309,7 @@ export function AssignedJobs() {
         <div className="filter-bar" style={{ marginBottom: 0, borderBottom: 'none', paddingBottom: 0 }}>
           <button
             className="footer-btn"
-            onClick={() => { setActiveTab("my-jobs"); setFilter("all"); }}
-            style={{
-              background: activeTab === "my-jobs" ? 'var(--brand-black)' : 'var(--brand-white)',
-              color: activeTab === "my-jobs" ? 'var(--brand-white)' : 'var(--ink-800)',
-              borderColor: activeTab === "my-jobs" ? 'var(--brand-black)' : 'var(--rule)',
-            }}
-          >
-            My Jobs
-          </button>
-          <button
-            className="footer-btn"
-            onClick={() => { setActiveTab("assigned-by-me"); setFilter("all"); }}
+            onClick={() => { setActiveTab("assigned-by-me"); setFilter("all"); setCategoryFilter("all"); }}
             style={{
               background: activeTab === "assigned-by-me" ? 'var(--brand-black)' : 'var(--brand-white)',
               color: activeTab === "assigned-by-me" ? 'var(--brand-white)' : 'var(--ink-800)',
@@ -317,12 +318,23 @@ export function AssignedJobs() {
           >
             Jobs I Assigned
           </button>
+          <button
+            className="footer-btn"
+            onClick={() => { setActiveTab("my-jobs"); setFilter("all"); setCategoryFilter("all"); }}
+            style={{
+              background: activeTab === "my-jobs" ? 'var(--brand-black)' : 'var(--brand-white)',
+              color: activeTab === "my-jobs" ? 'var(--brand-white)' : 'var(--ink-800)',
+              borderColor: activeTab === "my-jobs" ? 'var(--brand-black)' : 'var(--rule)',
+            }}
+          >
+            My Jobs
+          </button>
         </div>
       )}
 
       {/* Filter Bar */}
       <div className="filter-bar">
-        <span className="filter-label">Filter</span>
+        <span className="filter-label">Status</span>
         {[
           { key: "all", label: `All (${total})` },
           { key: "open", label: `Open (${openCount})` },
@@ -346,8 +358,46 @@ export function AssignedJobs() {
         <div className="results-count">{displayJobs.length} job{displayJobs.length !== 1 ? 's' : ''}</div>
       </div>
 
+      {/* Category Filter + Sort */}
+      <div className="filter-bar">
+        <span className="filter-label">Category</span>
+        {[
+          { key: "all", label: "All" },
+          { key: "safety", label: "Safety" },
+          { key: "design", label: "Design" },
+          { key: "inventory", label: "Inventory" },
+          { key: "quality", label: "Quality" },
+        ].map(c => (
+          <button
+            key={c.key}
+            className="footer-btn"
+            onClick={() => setCategoryFilter(categoryFilter === c.key ? "all" : c.key)}
+            style={{
+              background: categoryFilter === c.key ? 'var(--brand-black)' : 'var(--brand-white)',
+              color: categoryFilter === c.key ? 'var(--brand-white)' : 'var(--ink-800)',
+              borderColor: categoryFilter === c.key ? 'var(--brand-black)' : 'var(--rule)',
+              padding: '4px 10px',
+              fontSize: '10px',
+            }}
+          >
+            {c.label}
+          </button>
+        ))}
+        <div style={{ marginLeft: 'auto' }}>
+          <select
+            className="filter-sel"
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value)}
+            style={{ fontSize: '11px', padding: '5px 10px' }}
+          >
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
+          </select>
+        </div>
+      </div>
+
       {/* Job Cards */}
-      <div className="cards-grid" style={{ gridTemplateColumns: '1fr' }}>
+      <div className="cards-grid" style={{ gridTemplateColumns: 'repeat(2, 1fr)' }}>
         {loading && (
           <div className="empty-state">
             <div className="empty-state-title">Loading\u2026</div>
@@ -463,13 +513,13 @@ export function AssignedJobs() {
         isOpen={!!rejectModalAssignment}
         onClose={() => setRejectModalAssignment(null)}
         assignmentId={rejectModalAssignment}
-        onRejected={() => { invalidate(''); fetchAssignedByMe(true); setRejectModalAssignment(null); }}
+        onRejected={() => { invalidate(''); fetchAssignedByMe(true); fetchAssignedJobs(true); setRejectModalAssignment(null); }}
       />
       <EscalateModal
         isOpen={!!escalateModalAssignment}
         onClose={() => setEscalateModalAssignment(null)}
         assignmentId={escalateModalAssignment}
-        onEscalated={() => { invalidate(''); fetchAssignedByMe(true); setEscalateModalAssignment(null); }}
+        onEscalated={() => { invalidate(''); fetchAssignedByMe(true); fetchAssignedJobs(true); setEscalateModalAssignment(null); }}
       />
       <ReassignConfirmModal
         isOpen={!!reassignConfirm}

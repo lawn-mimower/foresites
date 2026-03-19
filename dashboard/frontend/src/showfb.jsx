@@ -9,10 +9,11 @@ import AssignModal from "./components/AssignModal";
 import RejectModal from "./components/RejectModal";
 import EscalateModal from "./components/EscalateModal";
 import ReassignConfirmModal from "./components/ReassignConfirmModal";
-// StatusBadge components are used internally by AssignerCard
+import { StatusPill, CategoryTag, ImpactBadge } from "./components/StatusBadge";
 import {
   getImpact,
   formatCategory,
+  formatSnagId,
   deriveSnagDisplayStatus,
 } from "./utils/snagHelpers";
 import { cachedFetch, invalidate } from "./utils/dataCache";
@@ -64,6 +65,7 @@ export function AllFeedbacks() {
   const [rejectModalAssignment, setRejectModalAssignment] = useState(null);
   const [escalateModalAssignment, setEscalateModalAssignment] = useState(null);
   const [reassignConfirm, setReassignConfirm] = useState(null); // { snag, assignment }
+  const [detailModalSnag, setDetailModalSnag] = useState(null);
 
   const { apiCall, isAdmin, user } = useAuth();
   const API = API_BASE;
@@ -281,15 +283,16 @@ export function AllFeedbacks() {
   // ── Filtering & Sorting ──
   let displayed = [...feedbacks].filter(f => f);
 
-  if (filterStatus === "open") displayed = displayed.filter(f => f.status === 'pending' && !f.acknowledged_at);
-  else if (filterStatus === "in_progress") displayed = displayed.filter(f => f.status === 'pending' && f.acknowledged_at);
-  else if (filterStatus === "in_review") {
+  if (filterStatus !== "all") {
     displayed = displayed.filter(f => {
-      const assignments = assignedUsers[f.id] || [];
-      return assignments.some(a => a.status === 'in_review');
+      const ds = deriveSnagDisplayStatus(f.status, assignedUsers[f.id] || []);
+      if (filterStatus === "open") return ds === 'open';
+      if (filterStatus === "in_progress") return ds === 'in_progress';
+      if (filterStatus === "in_review") return ds === 'in_review';
+      if (filterStatus === "closed") return ds === 'closed';
+      return true;
     });
   }
-  else if (filterStatus === "closed") displayed = displayed.filter(f => f.status === 'resolved');
 
   if (filterCategory !== "all") displayed = displayed.filter(f => f.category === filterCategory);
   if (filterSite !== "all") displayed = displayed.filter(f => f.site?.site_name === filterSite);
@@ -404,43 +407,114 @@ export function AllFeedbacks() {
         <div className="results-count">{displayed.length} snag{displayed.length !== 1 ? 's' : ''}</div>
       </div>
 
-      {/* ── CARDS GRID ── */}
-      <div className={`cards-grid${viewMode === 'list' ? ' list-view' : ''}`}>
-        {displayed.length === 0 && (
-          <div className="empty-state">
-            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-            <div className="empty-state-title">No snags match your filters</div>
-            <div className="empty-state-sub">Try adjusting the filters above or clear the search</div>
-          </div>
-        )}
+      {/* ── CARDS / LIST ── */}
+      {viewMode === 'list' ? (
+        <div className="snag-list-wrap">
+          <table className="snag-list-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Description</th>
+                <th>Category</th>
+                <th>Impact</th>
+                <th>Assigned To</th>
+                <th>Site</th>
+                <th>Due</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {displayed.length === 0 && (
+                <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--ink-400)' }}>No snags match your filters</td></tr>
+              )}
+              {displayed.map((fb) => {
+                const displayStatus = getDisplayStatus(fb);
+                const primaryAssignment = getPrimaryAssignment(fb.id);
+                const dueDate = primaryAssignment?.due_date;
+                return (
+                  <tr key={fb.id} onClick={() => setDetailModalSnag(fb)} style={{ cursor: 'pointer' }}>
+                    <td className="list-snag-id">{formatSnagId(fb.id)}</td>
+                    <td><div className="list-snag-title">{fb.feedback || (fb.feedback_type === 'voice' ? 'Voice Feedback' : 'No feedback')}</div></td>
+                    <td><CategoryTag category={fb.category} /></td>
+                    <td><ImpactBadge category={fb.category} /></td>
+                    <td style={{ fontSize: 13 }}>{primaryAssignment?.username || 'Unassigned'}</td>
+                    <td style={{ fontSize: 12, color: 'var(--ink-400)' }}>{fb.site?.site_name || '—'}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontSize: 11 }}>
+                      <span className={getDueClass(dueDate)}>{formatDue(dueDate)}</span>
+                    </td>
+                    <td><StatusPill displayStatus={displayStatus} /></td>
+                    <td><span className="ss-view-all">View &rarr;</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="cards-grid">
+          {displayed.length === 0 && (
+            <div className="empty-state">
+              <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+              <div className="empty-state-title">No snags match your filters</div>
+              <div className="empty-state-sub">Try adjusting the filters above or clear the search</div>
+            </div>
+          )}
 
-        {displayed.map((fb) => {
-          const displayStatus = getDisplayStatus(fb);
-          const primaryAssignment = getPrimaryAssignment(fb.id);
+          {displayed.map((fb) => {
+            const displayStatus = getDisplayStatus(fb);
+            const primaryAssignment = getPrimaryAssignment(fb.id);
 
-          return (
+            return (
+              <AssignerCard
+                key={fb.id}
+                snag={fb}
+                assignment={primaryAssignment}
+                displayStatus={displayStatus}
+                onImageClick={setLightboxImage}
+                onAssign={() => setAssignModalSnag({ id: fb.id, site_id: fb.site_id || user?.site_id })}
+                onReassign={() => handleReassignClick(fb, primaryAssignment)}
+                onReject={() => setRejectModalAssignment(primaryAssignment?.assignment_id)}
+                onEscalate={() => setEscalateModalAssignment(primaryAssignment?.assignment_id)}
+                onClose={() => toggleTodo(fb.id, fb.status)}
+                isAdmin={isAdmin()}
+                isHighlighted={highlightId === fb.id}
+                viewMode="grid"
+                getDueClass={getDueClass}
+                formatDue={formatDue}
+                apiCall={apiCall}
+                apiBase={API}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {/* Snag Detail Modal (from list view click) */}
+      {detailModalSnag && (
+        <div className="snag-detail-overlay" onClick={(e) => e.target === e.currentTarget && setDetailModalSnag(null)}>
+          <div className="snag-detail-modal">
+            <button className="snag-detail-close" onClick={() => setDetailModalSnag(null)}>&times;</button>
             <AssignerCard
-              key={fb.id}
-              snag={fb}
-              assignment={primaryAssignment}
-              displayStatus={displayStatus}
+              snag={detailModalSnag}
+              assignment={getPrimaryAssignment(detailModalSnag.id)}
+              displayStatus={getDisplayStatus(detailModalSnag)}
               onImageClick={setLightboxImage}
-              onAssign={() => setAssignModalSnag({ id: fb.id, site_id: fb.site_id || user?.site_id })}
-              onReassign={() => handleReassignClick(fb, primaryAssignment)}
-              onReject={() => setRejectModalAssignment(primaryAssignment?.assignment_id)}
-              onEscalate={() => setEscalateModalAssignment(primaryAssignment?.assignment_id)}
-              onClose={() => toggleTodo(fb.id, fb.status)}
+              onAssign={() => { setAssignModalSnag({ id: detailModalSnag.id, site_id: detailModalSnag.site_id || user?.site_id }); setDetailModalSnag(null); }}
+              onReassign={() => { handleReassignClick(detailModalSnag, getPrimaryAssignment(detailModalSnag.id)); setDetailModalSnag(null); }}
+              onReject={() => { setRejectModalAssignment(getPrimaryAssignment(detailModalSnag.id)?.assignment_id); setDetailModalSnag(null); }}
+              onEscalate={() => { setEscalateModalAssignment(getPrimaryAssignment(detailModalSnag.id)?.assignment_id); setDetailModalSnag(null); }}
+              onClose={() => { toggleTodo(detailModalSnag.id, detailModalSnag.status); setDetailModalSnag(null); }}
               isAdmin={isAdmin()}
-              isHighlighted={highlightId === fb.id}
-              viewMode={viewMode}
+              viewMode="grid"
               getDueClass={getDueClass}
               formatDue={formatDue}
               apiCall={apiCall}
               apiBase={API}
             />
-          );
-        })}
-      </div>
+          </div>
+        </div>
+      )}
 
       {/* Action Modals */}
       <AssignModal
@@ -449,19 +523,19 @@ export function AllFeedbacks() {
         snagId={assignModalSnag?.id}
         siteId={assignModalSnag?.site_id}
         currentAssignment={assignModalSnag?.currentAssignment}
-        onAssigned={() => { fetchAssignments(); setAssignModalSnag(null); }}
+        onAssigned={() => { fetchAllData(true); setAssignModalSnag(null); }}
       />
       <RejectModal
         isOpen={!!rejectModalAssignment}
         onClose={() => setRejectModalAssignment(null)}
         assignmentId={rejectModalAssignment}
-        onRejected={() => { fetchAssignments(); setRejectModalAssignment(null); }}
+        onRejected={() => { fetchAllData(true); setRejectModalAssignment(null); }}
       />
       <EscalateModal
         isOpen={!!escalateModalAssignment}
         onClose={() => setEscalateModalAssignment(null)}
         assignmentId={escalateModalAssignment}
-        onEscalated={() => { fetchAssignments(); setEscalateModalAssignment(null); }}
+        onEscalated={() => { fetchAllData(true); setEscalateModalAssignment(null); }}
       />
       <ReassignConfirmModal
         isOpen={!!reassignConfirm}

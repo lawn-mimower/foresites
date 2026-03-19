@@ -43,6 +43,45 @@ WHERE u.username ILIKE '%john%' AND sa.status = 'open'
 LIMIT 100
 ```
 
+### Snags under revision (rejected at least once, still active)
+```sql
+SELECT s.id, s.feedback, s.category, sa.status, sa.rejection_count,
+       sa.rejection_remarks, u.username AS assignee, st.site_name
+FROM snag_assignment sa
+JOIN snag s ON sa.snag_id = s.id
+JOIN website_user u ON sa.assigned_user_id = u.user_id
+JOIN site st ON sa.site_id = st.id
+WHERE sa.rejection_count > 0 AND sa.is_active = true
+ORDER BY sa.rejection_count DESC, sa.assigned_at DESC
+LIMIT 100
+```
+
+### Snags currently rejected (awaiting re-work by assignee)
+```sql
+SELECT s.feedback, s.category, sa.rejection_remarks, sa.rejection_count,
+       u.username AS assignee, st.site_name
+FROM snag_assignment sa
+JOIN snag s ON sa.snag_id = s.id
+JOIN website_user u ON sa.assigned_user_id = u.user_id
+JOIN site st ON sa.site_id = st.id
+WHERE sa.status IN ('rejected', 'in_progress') AND sa.rejection_count > 0
+  AND sa.is_active = true
+ORDER BY sa.rejection_count DESC
+LIMIT 100
+```
+
+### Engineers with most rejections
+```sql
+SELECT u.username, SUM(sa.rejection_count) AS total_rejections,
+       COUNT(*) FILTER (WHERE sa.rejection_count > 0) AS assignments_rejected
+FROM snag_assignment sa
+JOIN website_user u ON sa.assigned_user_id = u.user_id
+WHERE sa.rejection_count > 0
+GROUP BY u.username
+ORDER BY total_rejections DESC
+LIMIT 20
+```
+
 ## PostgreSQL Best Practices
 
 1. **Prefer named columns** over `SELECT *` — only fetch what's needed.

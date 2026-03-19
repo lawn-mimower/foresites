@@ -137,14 +137,21 @@ export function formatAssignmentPriority(priority) {
   return map[priority.toLowerCase()] || priority;
 }
 
-/** Compute the "worst" assignment status for a snag from its assignments array */
+/** Compute the "worst" assignment status for a snag from its assignments array.
+ *  Assignment status takes priority — if there's an active in_progress/in_review
+ *  assignment, the snag isn't closed even if snag.status is still 'resolved'
+ *  (e.g. reassignment after closure before cache refreshes). */
 export function deriveSnagDisplayStatus(snagStatus, assignments) {
-  if (snagStatus === 'resolved') return 'closed';
-  if (!assignments || assignments.length === 0) return 'open';
-  // Priority: in_review > in_progress/rejected > open
+  if (!assignments || assignments.length === 0) {
+    return snagStatus === 'resolved' ? 'closed' : 'open';
+  }
+  // Assignment statuses are more current than snag table status
   const statuses = assignments.map(a => a.status);
   if (statuses.includes('in_review')) return 'in_review';
   if (statuses.includes('in_progress') || statuses.includes('rejected')) return 'in_progress';
+  // Only closed if snag resolved AND all assignments are resolved/open
+  if (snagStatus === 'resolved' && statuses.every(s => s === 'resolved')) return 'closed';
+  if (snagStatus === 'resolved') return 'closed';
   if (statuses.some(s => s !== 'open')) return 'in_progress';
   return 'open';
 }
