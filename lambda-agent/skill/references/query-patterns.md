@@ -82,6 +82,54 @@ ORDER BY total_rejections DESC
 LIMIT 20
 ```
 
+### Active assignments only (current workload)
+```sql
+SELECT u.username, sa.status, sa.priority, sa.due_date
+FROM snag_assignment sa
+JOIN website_user u ON sa.assigned_user_id = u.user_id
+WHERE sa.is_active = true AND sa.status NOT IN ('resolved')
+ORDER BY sa.due_date ASC NULLS LAST
+LIMIT 100
+```
+
+### Overdue assignments (using due_date)
+```sql
+SELECT st.site_name, u.username, sa.due_date, sa.status,
+       NOW() - sa.due_date AS overdue_by
+FROM snag_assignment sa
+JOIN website_user u ON sa.assigned_user_id = u.user_id
+JOIN site st ON sa.site_id = st.id
+WHERE sa.is_active = true
+  AND sa.due_date < NOW()
+  AND sa.status NOT IN ('resolved')
+ORDER BY sa.due_date ASC
+LIMIT 100
+```
+
+### Snags by impact level (using impact_category_mapping)
+```sql
+SELECT icm.impact_level, s.category, COUNT(*) AS snag_count
+FROM snag s
+JOIN impact_category_mapping icm ON s.category = icm.category
+WHERE s.status = 'pending'
+GROUP BY icm.impact_level, s.category
+ORDER BY CASE icm.impact_level
+    WHEN 'critical' THEN 1 WHEN 'high' THEN 2
+    WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END
+LIMIT 100
+```
+
+### Who assigns the most work
+```sql
+SELECT u.username AS assigner, COUNT(*) AS assignments_created
+FROM snag_assignment sa
+JOIN website_user u ON sa.assigner_id = u.user_id
+WHERE sa.assigned_at >= NOW() - INTERVAL '30 days'
+GROUP BY u.username
+ORDER BY assignments_created DESC
+LIMIT 20
+```
+
 ## PostgreSQL Best Practices
 
 1. **Prefer named columns** over `SELECT *` — only fetch what's needed.
@@ -107,3 +155,5 @@ LIMIT 20
    - Username: `JOIN website_user ON ... WHERE website_user.username ILIKE '%name%'`
 7. **Never use `site_name` directly on the `snag` table** — it doesn't exist. Always JOIN the `site` table.
 8. **Never use `username` directly on the `snag` table** — always JOIN `website_user` via `snag_assignment`.
+9. **Always filter `is_active = true`** on `snag_assignment` when querying current workload or open items. Omit only for historical/resolved analysis.
+10. **Prefer `due_date`** over computed overdue detection. `sa.due_date < NOW()` is cleaner than `sa.acknowledged_at + sa.time_requested < NOW()`.

@@ -16,6 +16,7 @@ _TABLE_WHITELIST = [
     "snag_assignment",
     "website_user",
     "todo",
+    "impact_category_mapping",
     "chat_session",
     "chat_message",
 ]
@@ -125,8 +126,6 @@ def introspect_schema() -> str | None:
     try:
         conn = get_read_conn()
         with conn.cursor() as cur:
-            cur.execute("SET statement_timeout = '5s';")
-
             cur.execute(_Q_COLUMNS, (_TABLE_WHITELIST,))
             columns = cur.fetchall()
 

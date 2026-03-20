@@ -34,3 +34,64 @@ def build_chart(
         "x_label": x_label,
         "y_label": y_label,
     }
+
+
+def build_table(title: str, columns: list, rows: list) -> dict:
+    """Build a structured data table artifact for the frontend artifact panel.
+
+    Args:
+        title: Table title
+        columns: Column header labels
+        rows: List of row arrays (each row is a list of string values)
+
+    Returns:
+        Artifact dict with type "table".
+    """
+    return {
+        "type": "table",
+        "title": title,
+        "columns": [str(c) for c in columns],
+        "rows": [[str(v) for v in row] for row in rows],
+    }
+
+
+def build_kpi(title: str, metrics: list) -> dict:
+    """Build KPI (Key Performance Indicator) cards artifact.
+
+    Args:
+        title: KPI section title
+        metrics: List of {"label": str, "value": str, "accent": str}
+                 accent can be "red", "green", "amber", or "default"
+
+    Returns:
+        Artifact dict with type "kpi".
+    """
+    return {
+        "type": "kpi",
+        "title": title,
+        "metrics": [
+            {
+                "label": str(m.get("label", "")),
+                "value": str(m.get("value", "")),
+                "accent": m.get("accent", "default"),
+            }
+            for m in metrics
+        ],
+    }
+
+
+def build_findings(title: str, items: list) -> dict:
+    """Build a key findings list artifact.
+
+    Args:
+        title: Findings section title
+        items: List of finding statement strings
+
+    Returns:
+        Artifact dict with type "findings".
+    """
+    return {
+        "type": "findings",
+        "title": title,
+        "items": [str(item) for item in items],
+    }

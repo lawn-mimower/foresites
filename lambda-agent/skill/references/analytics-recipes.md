@@ -20,18 +20,19 @@ ORDER BY s.created_at DESC
 LIMIT 50
 ```
 
-**Q2 — Overdue assignments (in progress but not resolved, estimate exceeded)**
+**Q2 — Overdue assignments (past due_date and not resolved)**
 ```sql
 SELECT st.site_name, u.username AS assigned_to, sa.assigner_remarks,
-       sa.time_requested, sa.acknowledged_at,
-       NOW() - sa.acknowledged_at AS elapsed
+       sa.due_date, sa.acknowledged_at,
+       NOW() - sa.assigned_at AS elapsed
 FROM snag_assignment sa
 JOIN site st ON sa.site_id = st.id
 JOIN website_user u ON sa.assigned_user_id = u.user_id
-WHERE sa.status = 'in_progress'
-  AND sa.acknowledged_at IS NOT NULL
-  AND sa.acknowledged_at + sa.time_requested < NOW()
-ORDER BY elapsed DESC
+WHERE sa.status IN ('open', 'in_progress')
+  AND sa.is_active = true
+  AND sa.due_date IS NOT NULL
+  AND sa.due_date < NOW()
+ORDER BY sa.due_date ASC
 LIMIT 30
 ```
 
@@ -42,6 +43,7 @@ FROM snag_assignment sa
 JOIN site st ON sa.site_id = st.id
 JOIN website_user u ON sa.assigned_user_id = u.user_id
 WHERE sa.status = 'in_review'
+  AND sa.is_active = true
 ORDER BY sa.assigned_at
 LIMIT 30
 ```
@@ -75,6 +77,7 @@ JOIN snag s ON sa.snag_id = s.id
 JOIN site st ON sa.site_id = st.id
 JOIN website_user u ON sa.assigned_user_id = u.user_id
 WHERE sa.status NOT IN ('resolved')
+  AND sa.is_active = true
 ORDER BY hours_since_assigned DESC
 LIMIT 20
 ```
@@ -85,6 +88,7 @@ SELECT u.username, u.designation, COUNT(*) AS open_count
 FROM snag_assignment sa
 JOIN website_user u ON sa.assigned_user_id = u.user_id
 WHERE sa.status NOT IN ('resolved')
+  AND sa.is_active = true
 GROUP BY u.username, u.designation
 ORDER BY open_count DESC
 LIMIT 15
@@ -257,11 +261,11 @@ LIMIT 10
 **Q3 — Rejected / revised assignments (quality of fixes)**
 ```sql
 SELECT u.username, SUM(sa.rejection_count) AS total_rejections,
-       COUNT(*) AS assignments_affected, sa.rejection_remarks
+       COUNT(*) AS assignments_affected
 FROM snag_assignment sa
 JOIN website_user u ON sa.assigned_user_id = u.user_id
-WHERE sa.rejection_count > 0
-GROUP BY u.username, sa.rejection_remarks
+WHERE sa.rejection_count > 0 AND sa.is_active = true
+GROUP BY u.username
 ORDER BY total_rejections DESC
 LIMIT 15
 ```
@@ -278,10 +282,11 @@ LIMIT 15
 ```sql
 SELECT u.username, u.designation, u.role,
        COUNT(*) FILTER (WHERE sa.status = 'resolved') AS resolved,
-       COUNT(*) FILTER (WHERE sa.status IN ('open', 'in_progress')) AS active,
-       COUNT(*) FILTER (WHERE sa.status = 'rejected') AS rejected
+       COUNT(*) FILTER (WHERE sa.status NOT IN ('resolved')) AS active,
+       COUNT(*) FILTER (WHERE sa.rejection_count > 0) AS ever_rejected
 FROM snag_assignment sa
 JOIN website_user u ON sa.assigned_user_id = u.user_id
+WHERE sa.is_active = true
 GROUP BY u.username, u.designation, u.role
 ORDER BY resolved DESC
 LIMIT 20
@@ -295,6 +300,7 @@ SELECT u.username,
 FROM snag_assignment sa
 JOIN website_user u ON sa.assigned_user_id = u.user_id
 WHERE sa.acknowledged_at IS NOT NULL
+  AND sa.is_active = true
 GROUP BY u.username
 ORDER BY avg_ack_hours ASC
 LIMIT 15
@@ -308,6 +314,7 @@ SELECT u.username,
 FROM snag_assignment sa
 JOIN website_user u ON sa.assigned_user_id = u.user_id
 WHERE sa.resolved_at IS NOT NULL
+  AND sa.is_active = true
 GROUP BY u.username
 ORDER BY avg_resolve_hours ASC
 LIMIT 15
@@ -388,6 +395,327 @@ LIMIT 10
 
 ---
 
+## 8. Issue Co-occurrence
+
+**Triggers:** "co-occurrence", "what issues travel together", "related issues", "correlated", "linked categories"
+
+Finds category pairs that appear at the same site in the same week — indicates shared root causes.
+
+**Q1 — Category co-occurrence pairs**
+```sql
+WITH snag_weeks AS (
+    SELECT id, site_id, category, DATE_TRUNC('week', created_at) AS week
+    FROM snag
+)
+SELECT a.category AS category_a, b.category AS category_b,
+       COUNT(*) AS co_occurrences
+FROM snag_weeks a
+JOIN snag_weeks b ON a.site_id = b.site_id
+  AND a.week = b.week
+  AND a.category < b.category
+GROUP BY a.category, b.category
+ORDER BY co_occurrences DESC
+LIMIT 20
+```
+
+**Q2 — Top co-occurring sites**
+```sql
+WITH snag_weeks AS (
+    SELECT s.site_id, s.category, DATE_TRUNC('week', s.created_at) AS week
+    FROM snag s
+)
+SELECT st.site_name, a.category AS cat_a, b.category AS cat_b,
+       COUNT(*) AS times_together
+FROM snag_weeks a
+JOIN snag_weeks b ON a.site_id = b.site_id AND a.week = b.week AND a.category < b.category
+JOIN site st ON a.site_id = st.id
+GROUP BY st.site_name, a.category, b.category
+ORDER BY times_together DESC
+LIMIT 15
+```
+
+**Synthesis:** Present as a table of category pairs with co-occurrence count. Use `build_table` for the pair matrix. Flag the strongest pair: "Safety x Resource co-occurred X times — likely share a staffing root cause." Use `build_findings` for key insights.
+
+---
+
+## 9. Sequential Pattern Detection
+
+**Triggers:** "what follows", "sequential", "chain", "predict", "after what", "what comes next"
+
+Finds temporal sequences: after category A appears at a site, what category follows within 14 days?
+
+**Q1 — Sequential category patterns**
+```sql
+WITH ordered AS (
+    SELECT site_id, category, created_at,
+           LEAD(category) OVER (PARTITION BY site_id ORDER BY created_at) AS next_category,
+           LEAD(created_at) OVER (PARTITION BY site_id ORDER BY created_at) AS next_at
+    FROM snag
+)
+SELECT category AS first_category, next_category AS follows_with,
+       COUNT(*) AS occurrences,
+       ROUND(AVG(EXTRACT(EPOCH FROM (next_at - created_at)) / 86400)::NUMERIC, 1) AS avg_gap_days
+FROM ordered
+WHERE next_category IS NOT NULL
+  AND next_category != category
+  AND next_at - created_at <= INTERVAL '14 days'
+GROUP BY category, next_category
+ORDER BY occurrences DESC
+LIMIT 20
+```
+
+**Synthesis:** Present as a table: first_category -> follows_with (count, avg gap). Highlight predictive patterns: "When design issues appear, safety issues follow within 9 days at 70% of sites." Use `build_table` and `build_findings`.
+
+---
+
+## 10. Anomaly Detection
+
+**Triggers:** "anomaly", "spike", "abnormal", "unusual", "alert", "outlier"
+
+Z-score on weekly snag counts per site vs. that site's historical average. Flags anything >1.5 std dev above normal.
+
+**Q1 — Anomalous sites this week**
+```sql
+WITH weekly AS (
+    SELECT site_id, DATE_TRUNC('week', created_at) AS week, COUNT(*) AS cnt
+    FROM snag
+    GROUP BY site_id, DATE_TRUNC('week', created_at)
+),
+stats AS (
+    SELECT site_id, AVG(cnt) AS avg_cnt, STDDEV(cnt) AS std_cnt
+    FROM weekly
+    GROUP BY site_id
+),
+current_week AS (
+    SELECT site_id, COUNT(*) AS this_week
+    FROM snag
+    WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE)
+    GROUP BY site_id
+)
+SELECT st.site_name, cw.this_week, ROUND(s.avg_cnt::NUMERIC, 1) AS historical_avg,
+       ROUND(s.std_cnt::NUMERIC, 1) AS std_dev,
+       ROUND(((cw.this_week - s.avg_cnt) / NULLIF(s.std_cnt, 0))::NUMERIC, 2) AS z_score
+FROM current_week cw
+JOIN stats s ON cw.site_id = s.site_id
+JOIN site st ON cw.site_id = st.id
+WHERE s.std_cnt > 0
+ORDER BY z_score DESC
+LIMIT 10
+```
+
+**Q2 — Category breakdown for anomalous sites**
+```sql
+WITH anomalous AS (
+    SELECT site_id
+    FROM (
+        SELECT site_id, COUNT(*) AS this_week FROM snag
+        WHERE created_at >= DATE_TRUNC('week', CURRENT_DATE)
+        GROUP BY site_id
+    ) cw
+    JOIN (
+        SELECT site_id, AVG(cnt) AS avg_cnt, STDDEV(cnt) AS std_cnt
+        FROM (
+            SELECT site_id, DATE_TRUNC('week', created_at) AS week, COUNT(*) AS cnt
+            FROM snag GROUP BY site_id, DATE_TRUNC('week', created_at)
+        ) w GROUP BY site_id
+    ) s ON cw.site_id = s.site_id
+    WHERE s.std_cnt > 0 AND (cw.this_week - s.avg_cnt) / s.std_cnt > 1.5
+)
+SELECT st.site_name, s.category, COUNT(*) AS cnt
+FROM snag s
+JOIN site st ON s.site_id = st.id
+WHERE s.site_id IN (SELECT site_id FROM anomalous)
+  AND s.created_at >= DATE_TRUNC('week', CURRENT_DATE)
+GROUP BY st.site_name, s.category
+ORDER BY st.site_name, cnt DESC
+LIMIT 30
+```
+
+**Synthesis:** Use `build_kpi` for alert cards with site name, spike magnitude, driving categories. Flag z_score > 1.5 as warnings, > 2.0 as critical. Use `build_findings` for action items.
+
+---
+
+## 11. Resolution Velocity Benchmarks
+
+**Triggers:** "velocity", "how fast", "benchmark", "resolution time", "SLA", "turnaround"
+
+Resolution time percentiles by category — establishes baselines for SLA setting.
+
+**Q1 — Resolution time percentiles by category**
+```sql
+WITH times AS (
+    SELECT s.category,
+           EXTRACT(EPOCH FROM (sa.resolved_at - sa.assigned_at)) / 86400 AS days_to_resolve
+    FROM snag_assignment sa
+    JOIN snag s ON sa.snag_id = s.id
+    WHERE sa.status = 'resolved' AND sa.resolved_at IS NOT NULL
+)
+SELECT category,
+       ROUND((PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY days_to_resolve))::NUMERIC, 1) AS p25_days,
+       ROUND((PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY days_to_resolve))::NUMERIC, 1) AS p50_days,
+       ROUND((PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY days_to_resolve))::NUMERIC, 1) AS p75_days,
+       COUNT(*) AS sample_size
+FROM times
+GROUP BY category
+ORDER BY p50_days DESC
+LIMIT 10
+```
+
+**Q2 — Resolution time by site**
+```sql
+WITH times AS (
+    SELECT sa.site_id,
+           EXTRACT(EPOCH FROM (sa.resolved_at - sa.assigned_at)) / 86400 AS days_to_resolve
+    FROM snag_assignment sa
+    WHERE sa.status = 'resolved' AND sa.resolved_at IS NOT NULL
+)
+SELECT st.site_name,
+       ROUND(AVG(days_to_resolve)::NUMERIC, 1) AS avg_days,
+       ROUND(MIN(days_to_resolve)::NUMERIC, 1) AS fastest,
+       ROUND(MAX(days_to_resolve)::NUMERIC, 1) AS slowest,
+       COUNT(*) AS resolved_count
+FROM times t
+JOIN site st ON t.site_id = st.id
+GROUP BY st.site_name
+ORDER BY avg_days DESC
+LIMIT 10
+```
+
+**Synthesis:** Use `build_table` with category rows and P25/P50/P75 columns. Use `build_chart` (bar) for site comparison. Flag any category where P75 > 7 days as "needs SLA attention."
+
+---
+
+## 12. Repeat Site Analysis
+
+**Triggers:** "repeat", "chronic", "worst sites", "site ranking", "problem sites", "high volume"
+
+Snag density (snags per week since site start), weighted by dominant category.
+
+**Q1 — Site snag density**
+```sql
+WITH site_metrics AS (
+    SELECT s.site_id,
+           COUNT(*) AS total_snags,
+           GREATEST(EXTRACT(EPOCH FROM (CURRENT_DATE - MIN(s.created_at))) / 604800, 1) AS weeks_active,
+           COUNT(*) FILTER (WHERE s.status = 'resolved') AS resolved
+    FROM snag s
+    GROUP BY s.site_id
+)
+SELECT st.site_name,
+       sm.total_snags,
+       ROUND(sm.total_snags::NUMERIC / sm.weeks_active, 1) AS snags_per_week,
+       ROUND(sm.resolved::NUMERIC / NULLIF(sm.total_snags, 0) * 100, 1) AS resolution_pct,
+       ROUND(sm.weeks_active::NUMERIC, 0) AS weeks_active
+FROM site_metrics sm
+JOIN site st ON sm.site_id = st.id
+ORDER BY snags_per_week DESC
+LIMIT 10
+```
+
+**Q2 — Dominant category per site**
+```sql
+SELECT DISTINCT ON (st.site_name) st.site_name, s.category, COUNT(*) AS cnt
+FROM snag s
+JOIN site st ON s.site_id = st.id
+GROUP BY st.site_name, s.category
+ORDER BY st.site_name, cnt DESC
+LIMIT 10
+```
+
+**Synthesis:** Use `build_table` for ranked table with snags/week, resolution %, dominant category. Use `build_chart` (bar) for density comparison. Flag sites above 2x fleet average as needing structural attention.
+
+---
+
+## 13. Workload Imbalance
+
+**Triggers:** "workload", "overloaded", "balance", "capacity", "redistribute", "fairness"
+
+Active assignments per engineer vs. team average — flags overloaded individuals.
+
+**Q1 — Engineer workload vs team average**
+```sql
+WITH engineer_load AS (
+    SELECT sa.assigned_user_id, COUNT(*) AS active_count
+    FROM snag_assignment sa
+    WHERE sa.status NOT IN ('resolved')
+      AND sa.is_active = true
+    GROUP BY sa.assigned_user_id
+),
+team_stats AS (
+    SELECT AVG(active_count) AS team_avg FROM engineer_load
+)
+SELECT u.username, u.designation, el.active_count,
+       ROUND(ts.team_avg::NUMERIC, 1) AS team_avg,
+       ROUND(el.active_count::NUMERIC / NULLIF(ts.team_avg, 0), 1) AS load_ratio
+FROM engineer_load el
+CROSS JOIN team_stats ts
+JOIN website_user u ON el.assigned_user_id = u.user_id
+ORDER BY el.active_count DESC
+LIMIT 15
+```
+
+**Q2 — Workload by site**
+```sql
+SELECT st.site_name, u.username, COUNT(*) AS active_assignments
+FROM snag_assignment sa
+JOIN website_user u ON sa.assigned_user_id = u.user_id
+JOIN site st ON sa.site_id = st.id
+WHERE sa.status NOT IN ('resolved')
+  AND sa.is_active = true
+GROUP BY st.site_name, u.username
+ORDER BY active_assignments DESC
+LIMIT 20
+```
+
+**Synthesis:** Use `build_chart` (bar) per engineer with active count, red line at team average. Use `build_kpi` for team stats. Flag anyone at >2x mean as overloaded. Suggest redistribution targets.
+
+---
+
+## 14. Priority & Impact Analysis
+
+**Triggers:** "priority", "impact", "critical issues", "high priority", "severity"
+
+Leverages the `priority` field on assignments and the `impact_category_mapping` table.
+
+**Q1 — Assignment distribution by priority**
+```sql
+SELECT sa.priority, sa.status, COUNT(*) AS cnt
+FROM snag_assignment sa
+WHERE sa.is_active = true AND sa.priority IS NOT NULL
+GROUP BY sa.priority, sa.status
+ORDER BY sa.priority, sa.status
+LIMIT 30
+```
+
+**Q2 — Impact level distribution (from category mapping)**
+```sql
+SELECT icm.impact_level, icm.category, COUNT(s.id) AS snag_count
+FROM snag s
+JOIN impact_category_mapping icm ON s.category = icm.category
+GROUP BY icm.impact_level, icm.category
+ORDER BY CASE icm.impact_level
+    WHEN 'critical' THEN 1 WHEN 'high' THEN 2
+    WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END,
+    snag_count DESC
+LIMIT 20
+```
+
+**Q3 — Unresolved high-impact snags**
+```sql
+SELECT st.site_name, s.category, s.feedback, s.status, icm.impact_level,
+       s.created_at
+FROM snag s
+JOIN site st ON s.site_id = st.id
+JOIN impact_category_mapping icm ON s.category = icm.category
+WHERE s.status = 'pending' AND icm.impact_level IN ('critical', 'high')
+ORDER BY CASE icm.impact_level WHEN 'critical' THEN 1 ELSE 2 END, s.created_at ASC
+LIMIT 20
+```
+
+**Synthesis:** Use `build_kpi` for count of critical/high/medium/low unresolved snags. Use `build_chart` (bar) for priority distribution. Use `build_findings` to highlight sites with most critical unresolved items.
+
+---
+
 ## Recipe Behavior Rules
 
 1. **Always run all queries in a recipe** — partial reports are worse than no report.
@@ -397,3 +725,8 @@ LIMIT 10
 5. **Use readable names** — "Safety Compliance" not "safety_compliance", site names not UUIDs.
 6. **If a recipe query returns no rows**, note it positively: "No overdue assignments — all on track."
 7. **Adapt to scope** — if the user names a specific site, add `WHERE site_id = (SELECT id FROM site WHERE site_name ILIKE '%name%')` to all queries.
+8. **Use artifact tools for reports** — for multi-query recipes, use `build_kpi` for headline numbers, `build_table` for detailed data, `build_chart` for visual trends, and `build_findings` for key takeaways. A good recipe output has 2-4 artifacts.
+9. **Artifact order matters** — KPI cards first (quick wins), then chart (visual), then table (detail), then findings (action items).
+10. **Always filter active assignments** — when querying current workload, open items, or bottlenecks from `snag_assignment`, add `WHERE is_active = true`. Only omit this for historical analysis (e.g., resolution time benchmarks on resolved items).
+11. **Use due_date for overdue detection** — prefer `sa.due_date < NOW()` over computed estimates like `sa.acknowledged_at + sa.time_requested`.
+12. **Impact-weight when possible** — if the `impact_category_mapping` table has data, join it to weight analysis by impact level. Critical safety snags should be flagged more prominently than low-impact issues.

@@ -13,8 +13,8 @@ _KEEPALIVE_PARAMS = {
 }
 
 
-def _get_connection(dsn):
-    conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor, **_KEEPALIVE_PARAMS)
+def _get_connection(dsn, options=None):
+    conn = psycopg2.connect(dsn, cursor_factory=RealDictCursor, options=options, **_KEEPALIVE_PARAMS)
     conn.autocommit = True
     return conn
 
@@ -22,7 +22,10 @@ def _get_connection(dsn):
 def get_read_conn():
     global _read_conn
     if _read_conn is None or _read_conn.closed:
-        _read_conn = _get_connection(os.environ["SUPABASE_DB_URL"])
+        _read_conn = _get_connection(
+            os.environ["SUPABASE_DB_URL"],
+            options="-c statement_timeout=10000",
+        )
     return _read_conn
 
 

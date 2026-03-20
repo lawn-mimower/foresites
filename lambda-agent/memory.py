@@ -16,13 +16,13 @@ def create_session(user_id: str, title: str = "New Chat") -> str:
 def load_history(session_id: str, limit: int = 20) -> list[dict]:
     """Load recent messages for a session, oldest first.
 
-    Returns list of {"role": str, "content": str, "chart_data": dict|None}.
+    Returns list of {"role": str, "content": str, "chart_data": dict|None, "metadata": dict|None}.
     """
     conn = get_write_conn()
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT role, content, chart_data
+            SELECT role, content, chart_data, metadata
             FROM chat_message
             WHERE session_id = %s
             ORDER BY created_at DESC
@@ -39,6 +39,7 @@ def load_history(session_id: str, limit: int = 20) -> list[dict]:
             "role": r["role"],
             "content": r["content"],
             "chart_data": r["chart_data"],
+            "metadata": r["metadata"],
         }
         for r in rows
     ]
@@ -51,32 +52,39 @@ def save_message(
     chart_data: dict | None = None,
     metadata: dict | None = None,
 ) -> str:
-    """Save a message to the database. Returns message_id."""
+    """Save a message to the database. Returns message_id.
+
+    Uses an explicit transaction so the INSERT and UPDATE are atomic.
+    """
     conn = get_write_conn()
-    with conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO chat_message (session_id, role, content, chart_data, metadata)
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING message_id
-            """,
-            (
-                session_id,
-                role,
-                content,
-                json.dumps(chart_data) if chart_data else None,
-                json.dumps(metadata or {}),
-            ),
-        )
-        msg_id = str(cur.fetchone()["message_id"])
-
-    # Update session timestamp
-    with conn.cursor() as cur:
-        cur.execute(
-            "UPDATE chat_session SET updated_at = now() WHERE session_id = %s",
-            (session_id,),
-        )
-
+    try:
+        conn.autocommit = False
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO chat_message (session_id, role, content, chart_data, metadata)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING message_id
+                """,
+                (
+                    session_id,
+                    role,
+                    content,
+                    json.dumps(chart_data) if chart_data else None,
+                    json.dumps(metadata or {}),
+                ),
+            )
+            msg_id = str(cur.fetchone()["message_id"])
+            cur.execute(
+                "UPDATE chat_session SET updated_at = now() WHERE session_id = %s",
+                (session_id,),
+            )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.autocommit = True
     return msg_id
 
 

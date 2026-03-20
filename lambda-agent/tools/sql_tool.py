@@ -7,7 +7,7 @@ import psycopg2
 _BLOCKED_RE = re.compile(
     r"\b("
     r"INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|GRANT|REVOKE|EXECUTE|COPY"
-    r"|pg_catalog|information_schema|pg_stat"
+    r"|pg_catalog|information_schema|pg_stat|pg_settings"
     r"|pg_sleep|dblink|lo_import|lo_export"
     r")\b",
     re.IGNORECASE,
@@ -72,7 +72,6 @@ def execute_sql(sql: str) -> dict:
         try:
             conn = get_read_conn()
             with conn.cursor() as cur:
-                cur.execute("SET statement_timeout = '10s';")
                 cur.execute(sql)
                 rows = cur.fetchall()
 
