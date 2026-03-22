@@ -513,26 +513,25 @@ export function ChatPanel() {
     setSessionMenu(null);
   }
 
-  async function submitRename() {
-    if (!renamingSession) return;
-    const { id, title } = renamingSession;
-    if (!title.trim()) { setRenamingSession(null); return; }
+  async function doRename(id, newTitle) {
+    if (!newTitle.trim()) return;
+    console.log("doRename called:", id, newTitle);
     try {
       const result = await apiCall(`/api/chat/sessions/${id}`, {
         method: "PATCH",
-        body: JSON.stringify({ title: title.trim() }),
+        body: JSON.stringify({ title: newTitle.trim() }),
       });
+      console.log("doRename result:", result);
       if (result?.error) {
         console.error("Rename failed:", result.error);
       } else {
         setSessions((prev) => prev.map((s) =>
-          s.session_id === id ? { ...s, title: title.trim() } : s
+          s.session_id === id ? { ...s, title: newTitle.trim() } : s
         ));
       }
     } catch (err) {
       console.error("Failed to rename session:", err);
     }
-    setRenamingSession(null);
   }
 
   // Helper to update the last message in state
@@ -789,13 +788,21 @@ export function ChatPanel() {
                   {renamingSession?.id === s.session_id ? (
                     <input
                       className="session-rename-input"
-                      value={renamingSession.title}
-                      onChange={(e) => setRenamingSession({ ...renamingSession, title: e.target.value })}
+                      defaultValue={s.title || ""}
                       onKeyDown={(e) => {
-                        if (e.key === "Enter") submitRename();
+                        if (e.key === "Enter") {
+                          const val = e.target.value;
+                          setRenamingSession(null);
+                          doRename(s.session_id, val);
+                        }
                         if (e.key === "Escape") setRenamingSession(null);
                       }}
-                      onBlur={submitRename}
+                      onBlur={(e) => {
+                        if (!renamingSession) return;
+                        const val = e.target.value;
+                        setRenamingSession(null);
+                        doRename(s.session_id, val);
+                      }}
                       autoFocus
                     />
                   ) : (

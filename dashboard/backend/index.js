@@ -28,7 +28,7 @@ const impactMappingRoutes = require('./Routes/impactMapping');
 
 app.use(cors({
   origin: (origin, callback) => callback(null, true),
-  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
 }));
