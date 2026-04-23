@@ -84,8 +84,8 @@ export default function AssigneeCard({
 
       {/* Card Body */}
       <div className="card-body">
-        <SnagDetailSection snag={snagData} defaultOpen={false} />
-        <AudioReportSection snag={snagData} defaultOpen={false} />
+        <SnagDetailSection snag={snagData} apiCall={apiCall} apiBase={apiBase} defaultOpen={false} />
+        <AudioReportSection snag={snagData} apiCall={apiCall} apiBase={apiBase} defaultOpen={false} />
         <ResolutionSection
           mode="assignee"
           assignment={job}

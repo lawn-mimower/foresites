@@ -37,10 +37,12 @@ async function getTranscription() {
       timeout: 60000, // 60 seconds
     });
 
-    // 5. Log the transcription from the response body
+    // 5. Log the structured response
     console.log('\n--- SUCCESS ---');
-    console.log('Transcription received:');
-    console.log(response.data.transcription); // 'response.data' has the parsed JSON
+    const data = response.data;
+    console.log('Transcription:', data.transcription);
+    console.log('Title:', data.title || '(none)');
+    console.log('AI Category:', data.ai_category || '(none)');
 
   } catch (error) {
     console.error('\n--- ERROR ---');

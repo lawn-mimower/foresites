@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
 import { showToast } from "./Toast";
 import { API_BASE } from "./config/api";
+import S3Image from "./components/S3Image";
 import "./css/meetzone.css";
 
 export function AssignSnags() {
@@ -280,7 +281,13 @@ export function AssignSnags() {
                     <p><strong>Transcription:</strong> {snag.transcription}</p>
                   )}
                   {snag.image_url && (
-                    <img src={snag.image_url} alt="Snag Image" className="snag-image" />
+                    <S3Image
+                      src={snag.image_url}
+                      apiCall={apiCall}
+                      apiBase={API_BASE}
+                      alt="Snag Image"
+                      className="snag-image"
+                    />
                   )}
                 </div>
 

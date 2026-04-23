@@ -62,21 +62,10 @@ async function getUserByPhoneNumber(phoneNumber) {
 // 🎤 TRANSCRIBE VOICE AUDIO
 async function getTranscription(audioFilePath) {
   try {
-    // Read the audio file from disk
-    // audioFilePath can be either S3 key (voice/filename.ogg) or local path (/uploads/voice/filename.ogg)
+    // audioFilePath is an absolute local path (e.g. /Users/.../uploads/voice/file.ogg)
     console.log(`📝 Reading audio file for transcription: ${audioFilePath}...`);
-    
-    let audioFile;
-    // Check if it's an S3 key (starts with voice/ or images/) or local path
-    if (audioFilePath.startsWith('voice/') || audioFilePath.startsWith('images/')) {
-      // It's an S3 key, read from local uploads folder (file was saved locally before S3 upload)
-      const localPath = path.join(__dirname, '../uploads', audioFilePath);
-      audioFile = fs.readFileSync(localPath);
-    } else {
-      // It's a local path, resolve from project root
-      const cleanPath = audioFilePath.startsWith('/') ? audioFilePath.substring(1) : audioFilePath;
-      audioFile = fs.readFileSync(path.resolve(__dirname, '..', cleanPath));
-    }
+
+    const audioFile = fs.readFileSync(audioFilePath);
 
     // Convert the file buffer to a Base64 string
     const audioBase64 = audioFile.toString('base64');
@@ -98,7 +87,7 @@ async function getTranscription(audioFilePath) {
       audio_base64: audioBase64,
     };
 
-    // API endpoint from voice_test.js
+    // API endpoint
     const API_ENDPOINT_URL = 'https://u91h1twf00.execute-api.eu-north-1.amazonaws.com/default/IssueTranscribe';
 
     // Send the POST request to the API Gateway
@@ -110,14 +99,31 @@ async function getTranscription(audioFilePath) {
       timeout: 60000, // 60 seconds
     });
 
-    // Extract transcription from response
-    const transcription = response.data?.transcription || '';
-    console.log('✅ Transcription received:', transcription.substring(0, 50) + '...');
-    return transcription;
+    // Parse structured JSON response: { transcription, title, ai_category }
+    const data = response.data;
+    const result = {
+      transcription: data?.transcription || '',
+      title: data?.title || null,
+      ai_category: data?.ai_category || null,
+    };
+    console.log('✅ Transcription received:', result.transcription.substring(0, 50) + '...');
+    if (result.title) console.log('✅ AI Title:', result.title);
+    if (result.ai_category) console.log('✅ AI Category:', result.ai_category);
+    return result;
   } catch (error) {
     console.error('❌ Transcription error:', error.response?.data || error.message);
-    return null; // Return null on error so the flow can continue
+    return null;
   }
+}
+
+async function getTranscriptionWithRetry(audioFilePath, maxAttempts = 3) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const result = await getTranscription(audioFilePath);
+    if (result) return result;
+    if (attempt < maxAttempts) console.warn(`⚠️ Transcription attempt ${attempt} failed, retrying...`);
+  }
+  console.error('❌ All transcription attempts failed.');
+  return null;
 }
 
 async function sendText(to, body) {
@@ -207,8 +213,8 @@ async function downloadMedia(mediaId, folderName, userName = 'anonymous') {
         const s3Url = getS3Url(s3Key, bucketName);
         console.log(`🔗 S3 URL: ${s3Url}`);
         
-        // Return full S3 URL for database storage
-        return s3Url;
+        // Return both local path and S3 URL
+        return { localPath: filePath, s3Url };
       } catch (s3Error) {
         console.error('❌ S3 upload failed:', s3Error.message);
         console.error('❌ Stack:', s3Error.stack);
@@ -686,25 +692,13 @@ const steps = {
     const mediaId = msgObj.audio?.id || msgObj.voice?.id || msgObj.audio_message?.id;
     if (!mediaId) return sendText(from, '⚠️ No audio found. Please resend.');
 
-    const localPath = await downloadMedia(mediaId, 'voice', user.feedback.reporter_name || 'user');
-    if (!localPath) {
+    const media = await downloadMedia(mediaId, 'voice', user.feedback.reporter_name || 'user');
+    if (!media) {
       return sendText(from, '⚠️ Error uploading voice file to S3. Please try again.');
     }
 
-    user.feedback.voice_url = localPath;
-    
-    // Transcribe the voice message
-    console.log('🎤 Starting transcription process...');
-    await sendText(from, '🔄 Processing your voice message...');
-    const transcription = await getTranscription(localPath);
-    
-    if (transcription) {
-      user.feedback.transcription = transcription;
-      console.log('✅ Transcription stored:', transcription.substring(0, 100));
-    } else {
-      console.warn('⚠️ Transcription failed, but continuing with voice file.');
-      // Continue even if transcription fails
-    }
+    user.feedback.voice_url = media.s3Url;
+    user.feedback._localAudioPath = media.localPath;
 
     user.step = 'askImage';
     await sendList(from, 'Upload Image', 'Would you like to attach an image?', [
@@ -743,12 +737,12 @@ const steps = {
     const mediaId = msgObj.image?.id;
     if (!mediaId) return sendText(from, '⚠️ No image found. Please resend.');
     
-    const s3Key = await downloadMedia(mediaId, 'images', user.feedback.reporter_name || 'user');
-    if (!s3Key) {
+    const media = await downloadMedia(mediaId, 'images', user.feedback.reporter_name || 'user');
+    if (!media) {
       return sendText(from, '⚠️ Error uploading image to S3. Please try again.');
     }
-    
-    user.feedback.image = [s3Key];
+
+    user.feedback.image = [media.s3Url];
     user.step = 'saveFeedback';
     await steps.saveFeedback(from, user);
   },
@@ -768,9 +762,10 @@ saveFeedback: async (from, user) => {
       feedback_type: user.feedback.feedback_type,
       feedback: user.feedback.feedback || null,
       voice_url: user.feedback.voice_url || null,
-      transcription: user.feedback.transcription || null,
+      transcription: null,
       suggestion: user.feedback.solution || null,
       image_url: user.feedback.image?.[0] || null,
+      ai_category: null,
       status: 'pending',
       created_at: new Date().toISOString(),
     };
@@ -789,6 +784,32 @@ saveFeedback: async (from, user) => {
     }
 
     console.log('\n📝 Feedback Saved to Supabase:', saved);
+
+    // Fire async voice transcription (non-blocking)
+    if (user.feedback._localAudioPath) {
+      const snagId = saved.id;
+      const audioPath = user.feedback._localAudioPath;
+
+      (async () => {
+        try {
+          const result = await getTranscriptionWithRetry(audioPath);
+          if (result) {
+            const { error: updateError } = await supabase.from('snag').update({
+              transcription: result.transcription,
+              feedback: result.title,
+              ai_category: result.ai_category,
+            }).eq('id', snagId);
+            if (updateError) {
+              console.error(`❌ Async transcription update error for snag ${snagId}:`, updateError);
+            } else {
+              console.log(`✅ Async transcription updated for snag ${snagId}`);
+            }
+          }
+        } catch (err) {
+          console.error(`❌ Async transcription error for snag ${snagId}:`, err);
+        }
+      })();
+    }
 
     // --- Define Report Paths (for CSV reporting) ---
     const { REPORTS_DIR, DAYWISE_CSV, SITEWISE_CSV } = require('../config/paths');

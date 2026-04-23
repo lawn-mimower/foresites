@@ -1,13 +1,20 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { CollapsibleSection } from '../CollapsibleSection';
+import { resolveMediaUrl } from '../../utils/resolveMediaUrl';
 
 const ICON_AUDIO = '<svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:currentColor"><path d="M12 14c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 14 6.7 11H5c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>';
 
 const WAVE_HEIGHTS = [30,50,70,40,80,60,90,45,70,55,80,65,35,75,50,85,40,60,70,50,40,65,80,30];
 
-export default function AudioReportSection({ snag, defaultOpen = false }) {
+export default function AudioReportSection({ snag, apiCall, apiBase, defaultOpen = false }) {
   const audioRef = useRef(null);
+  const [audioUrl, setAudioUrl] = useState(null);
   const hasAudio = snag.feedback_type === 'voice' && snag.voice_url;
+
+  useEffect(() => {
+    if (!snag.voice_url || !apiCall || !apiBase) return;
+    resolveMediaUrl(snag.voice_url, apiCall, apiBase).then(setAudioUrl).catch(() => {});
+  }, [snag.voice_url, apiCall, apiBase]);
 
   const audioBadge = hasAudio
     ? { text: 'Recording available', cls: 'has-content' }
@@ -40,7 +47,7 @@ export default function AudioReportSection({ snag, defaultOpen = false }) {
             </div>
             <span className="audio-dur">—:——</span>
           </div>
-          <audio ref={audioRef} src={snag.voice_url} preload="none" />
+          <audio ref={audioRef} src={audioUrl || snag.voice_url} preload="none" />
           {snag.transcription ? (
             <div className="transcription-box">{snag.transcription}</div>
           ) : (

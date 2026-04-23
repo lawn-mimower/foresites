@@ -136,8 +136,8 @@ export default function AssignerCard({
 
       {/* Card Body — Collapsible Sections */}
       <div className="card-body">
-        <SnagDetailSection snag={snag} onImageClick={onImageClick} defaultOpen={false} />
-        <AudioReportSection snag={snag} defaultOpen={false} />
+        <SnagDetailSection snag={snag} onImageClick={onImageClick} apiCall={apiCall} apiBase={apiBase} defaultOpen={false} />
+        <AudioReportSection snag={snag} apiCall={apiCall} apiBase={apiBase} defaultOpen={false} />
         <ResolutionSection
           mode="assigner"
           assignment={assignment}

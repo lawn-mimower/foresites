@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useAuth } from "./AuthContext";
 import { showToast } from "./Toast";
 import { API_BASE, BASE_URL } from "./config/api";
+import S3Image from "./components/S3Image";
 import "./css/meetzone.css";
 
 export function MeetingZone() {
@@ -251,11 +252,13 @@ export function MeetingZone() {
                       <strong>Image:</strong>
                     </p>
                     <div className="image-gallery">
-                      <img
+                      <S3Image
                         src={fb.image_url}
+                        apiCall={apiCall}
+                        apiBase={API_BASE}
                         alt="Feedback"
                         className="feedback-image"
-                        onClick={() => window.open(fb.image_url, "_blank")}
+                        onClick={(url) => window.open(url, "_blank")}
                       />
                     </div>
                   </div>

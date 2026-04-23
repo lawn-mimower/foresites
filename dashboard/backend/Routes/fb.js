@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { createObjectCsvWriter } = require('csv-writer');
 const { REPORTS_DIR, DAYWISE_CSV, SITEWISE_CSV } = require('../../../config/paths');
-const { getSignedUrlForS3Object, isS3Key } = require('../../../chatbot/s3');
+const { getSignedUrlForS3Object, isS3Key, s3ObjectExists } = require('../../../chatbot/s3');
 
 const { authenticateToken, requireAdmin } = require('./auth');
 
@@ -215,30 +215,28 @@ Router.get('/media-url', async (req, res) => {
 
     console.log(`🔍 Media URL request for: ${filePath}`);
 
-    // Check if it's an S3 key
-    if (isS3Key(filePath)) {
+    // Strip uploads/ prefix — DB stores local paths, S3 keys don't have it
+    const s3Key = filePath.startsWith('uploads/') ? filePath.slice('uploads/'.length) : filePath;
+
+    // Try S3 first if it looks like an S3 key, fall back to local
+    if (isS3Key(s3Key)) {
       const bucketName = process.env.S3_BUCKET_NAME;
-      if (!bucketName) {
-        console.warn('⚠️ S3_BUCKET_NAME not configured');
-        return res.status(500).json({ error: 'S3 bucket not configured' });
+      if (bucketName && await s3ObjectExists(s3Key, bucketName)) {
+        try {
+          const signedUrl = await getSignedUrlForS3Object(s3Key, bucketName);
+          console.log(`✅ S3 object found, signed URL for: ${s3Key}`);
+          return res.json({ url: signedUrl });
+        } catch (s3Error) {
+          console.warn(`⚠️ S3 signing failed for ${s3Key}, falling back to local`);
+        }
       }
-      
-      try {
-        console.log(`📤 Generating signed URL for S3 key: ${filePath} in bucket: ${bucketName}`);
-        const signedUrl = await getSignedUrlForS3Object(filePath, bucketName);
-        console.log(`✅ Generated signed URL for: ${filePath}`);
-        return res.json({ url: signedUrl });
-      } catch (s3Error) {
-        console.error('❌ Error generating signed URL:', s3Error);
-        return res.status(500).json({ error: 'Failed to generate signed URL', details: s3Error.message });
-      }
-    } else {
-      // It's a local path, return the local URL
-      console.log(`📁 Returning local path for: ${filePath}`);
-      const baseUrl = process.env.BASE_URL || 'http://localhost:9999';
-      const cleanPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
-      return res.json({ url: `${baseUrl}${cleanPath}` });
     }
+
+    // Fallback: serve from local uploads/ directory
+    console.log(`📁 Returning local path for: ${filePath}`);
+    const baseUrl = process.env.BASE_URL || 'http://localhost:9999';
+    const cleanPath = filePath.startsWith('/') ? filePath : `/${filePath}`;
+    return res.json({ url: `${baseUrl}${cleanPath}` });
   } catch (err) {
     console.error('❌ Error getting media URL:', err);
     res.status(500).json({ error: 'Failed to get media URL', details: err.message });

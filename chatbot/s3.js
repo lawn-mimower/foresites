@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const fs = require("fs");
 const path = require("path");
@@ -93,7 +93,9 @@ async function getSignedUrlForS3Object(s3Key, bucketName = process.env.S3_BUCKET
 
 // Helper function to check if a string is an S3 key (starts with voice/ or images/)
 function isS3Key(path) {
-  return path && (path.startsWith('voice/') || path.startsWith('images/'));
+  if (!path) return false;
+  const key = path.startsWith('uploads/') ? path.slice('uploads/'.length) : path;
+  return key.startsWith('voice/') || key.startsWith('images/');
 }
 
 // Helper function to generate public S3 URL
@@ -104,4 +106,13 @@ function getS3Url(s3Key, bucketName = process.env.S3_BUCKET_NAME, region = proce
   return `https://${bucketName}.s3.${region}.amazonaws.com/${s3Key}`;
 }
 
-module.exports = { uploadToS3, getSignedUrlForS3Object, isS3Key, getS3Url };
+async function s3ObjectExists(key, bucketName = process.env.S3_BUCKET_NAME) {
+  try {
+    await s3.send(new HeadObjectCommand({ Bucket: bucketName, Key: key }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+module.exports = { uploadToS3, getSignedUrlForS3Object, isS3Key, getS3Url, s3ObjectExists };

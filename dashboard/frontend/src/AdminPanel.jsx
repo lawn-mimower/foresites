@@ -460,12 +460,19 @@ export function AdminPanel() {
                   <label>Building</label>
                   <select
                     value={formData.department}
-                    onChange={(e) => setFormData({...formData, department: e.target.value})}
+                    onChange={(e) => {
+                      const selected = buildings.find(b => b.id === e.target.value);
+                      setFormData({
+                        ...formData,
+                        department: selected ? selected.site_name : e.target.value,
+                        site_id: selected ? selected.id : ""
+                      });
+                    }}
+                    value={formData.site_id || ""}
                   >
                     <option value="">-- Select Building --</option>
-                    <option value="all">All</option>
                     {buildings.map((building) => (
-                      <option key={building.id} value={building.site_name}>
+                      <option key={building.id} value={building.id}>
                         {building.site_name}
                       </option>
                     ))}

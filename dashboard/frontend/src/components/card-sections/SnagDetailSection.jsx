@@ -1,9 +1,10 @@
 import React from 'react';
 import { CollapsibleSection } from '../CollapsibleSection';
+import S3Image from '../S3Image';
 
 const ICON_DETAIL = '<svg viewBox="0 0 24 24" style="width:13px;height:13px;fill:currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 4l5 2.18V11c0 3.5-2.33 6.79-5 7.93-2.67-1.14-5-4.43-5-7.93V7.18L12 5z"/></svg>';
 
-export default function SnagDetailSection({ snag, onImageClick, defaultOpen = false }) {
+export default function SnagDetailSection({ snag, onImageClick, apiCall, apiBase, defaultOpen = false }) {
   const hasImage = !!snag.image_url;
   const reportedDate = new Date(snag.created_at).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
@@ -18,10 +19,13 @@ export default function SnagDetailSection({ snag, onImageClick, defaultOpen = fa
       defaultOpen={defaultOpen}
     >
       {hasImage ? (
-        <div className="snag-image-thumb" onClick={() => onImageClick?.(snag.image_url)}>
-          <img src={snag.image_url} alt="Snag" />
-          <span className="image-expand-hint">View full</span>
-        </div>
+        <S3Image
+          src={snag.image_url}
+          apiCall={apiCall}
+          apiBase={apiBase}
+          alt="Snag"
+          onClick={onImageClick}
+        />
       ) : (
         <div className="snag-image-thumb">
           <div className="snag-image-placeholder">

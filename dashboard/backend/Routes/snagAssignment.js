@@ -140,7 +140,7 @@ Router.get('/assignments/assigned-by-me', authenticateToken, async (req, res) =>
         rejection_count,
         rejection_remarks,
         assigned_user:website_user!assigned_user_id(username, role),
-        snag(id, feedback_type, feedback, transcription, image_url, status, category),
+        snag(id, feedback_type, feedback, transcription, image_url, voice_url, status, category),
         site(id, site_name, site_manager)
       `)
       .eq('assigner_id', req.user.user_id)
@@ -514,7 +514,7 @@ Router.get('/user/assigned-jobs', authenticateToken, async (req, res) => {
         priority,
         rejection_count,
         rejection_remarks,
-        snag(id, feedback_type, feedback, transcription, image_url, status, category),
+        snag(id, feedback_type, feedback, transcription, image_url, voice_url, status, category),
         site(id, site_name, site_manager)
       `)
       .eq('assigned_user_id', req.user.user_id)
