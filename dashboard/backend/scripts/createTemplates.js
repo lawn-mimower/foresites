@@ -17,86 +17,155 @@ if (!ACCESS_TOKEN) {
   process.exit(1);
 }
 
+// URL button used by all templates. The {{1}} suffix is the snag id, filled in
+// at send time by whatsapp.js (button param). Meta wants the example as the full URL.
+const viewJobButton = () => ({
+  type: 'BUTTONS',
+  buttons: [
+    {
+      type: 'URL',
+      text: 'View Job',
+      url: `${FRONTEND_URL}/assignedjobs?highlight={{1}}`,
+      example: [`${FRONTEND_URL}/assignedjobs?highlight=test-assignment-id`],
+    },
+  ],
+});
+
+const FOOTER = { type: 'FOOTER', text: 'ForeSites by OMNIFEED' };
+
+// NOTE: body text + variable order/count below must stay in lockstep with the
+// bodyParams arrays in dashboard/backend/services/whatsapp.js. If you reorder a
+// variable here, live notifications will fill the wrong slots.
 const TEMPLATES = [
+  // whatsapp.js → sendAssignmentNotification
+  // {{1}}=name {{2}}=assigner {{3}}=snagId {{4}}=priority {{5}}=issue
+  // {{6}}=location {{7}}=category {{8}}=remarks block
   {
     name: 'foresites_snag_assigned',
     category: 'UTILITY',
     language: 'en',
     components: [
+      { type: 'HEADER', format: 'TEXT', text: 'ForeSites – SNAG ASSIGNED!' },
       {
         type: 'BODY',
-        text: 'Foresites Snag Alert: Hello {{1}}, a new snag has been assigned to you at site {{2}} under the {{3}} category. Please review the details and take the necessary action at the earliest.',
-        example: { body_text: [['Pratik', 'Lodha Palava', 'Safety Compliance']] },
+        text:
+          'Hi {{1}}, a new snag has been assigned to you by {{2}}.\n\n' +
+          'Snag ID: {{3}}\n' +
+          'Priority: {{4}}\n' +
+          'Issue: {{5}}\n' +
+          'Location: {{6}}\n' +
+          'Category: {{7}}\n\n' +
+          '{{8}}',
+        example: {
+          body_text: [[
+            'Mihir',
+            'System Administrator superadmin',
+            'SNG-7797',
+            '🔴 Urgent',
+            'Cement not received',
+            'Cedar Complex',
+            'Workflow Issues',
+            'Remarks by System Administrator superadmin: "Get appropriate cement from supplier Subhash"',
+          ]],
+        },
       },
-      {
-        type: 'BUTTONS',
-        buttons: [
-          {
-            type: 'URL',
-            text: 'View Job',
-            url: `${FRONTEND_URL}/assignedjobs?highlight={{1}}`,
-            example: ['test-assignment-id'],
-          },
-        ],
-      },
+      FOOTER,
+      viewJobButton(),
     ],
   },
+  // whatsapp.js → sendEscalationNotification
+  // {{1}}=name {{2}}=assigner {{3}}=snagId {{4}}=priority
+  // {{5}}=location {{6}}=category {{7}}=escalation remarks block
   {
     name: 'foresites_snag_escalation',
     category: 'UTILITY',
     language: 'en',
     components: [
+      { type: 'HEADER', format: 'TEXT', text: 'ForeSites – SNAG ESCALATED! ⚠️' },
       {
         type: 'BODY',
-        text: 'Foresites Escalation: Hello {{1}}, your assigned snag at site {{2}} requires urgent attention and has been escalated. Reason: {{3}}. Please address this as a priority.',
-        example: { body_text: [['Pratik', 'Lodha Palava', 'Overdue by 3 days']] },
+        text:
+          'Hi {{1}}, the following snag has been escalated by {{2}}.\n\n' +
+          'Snag ID: {{3}}\n' +
+          'Priority: {{4}}\n' +
+          'Location: {{5}}\n' +
+          'Category: {{6}}\n\n' +
+          '{{7}}\n\n' +
+          'Immediate attention required.',
+        example: {
+          body_text: [[
+            'Mihir',
+            'System Administrator superadmin',
+            'SNG-7797',
+            '🔴 Urgent',
+            'Cedar Complex',
+            'Workflow Issues',
+            'Escalation Remarks: "Overdue by 3 days"',
+          ]],
+        },
       },
-      {
-        type: 'BUTTONS',
-        buttons: [
-          {
-            type: 'URL',
-            text: 'View Job',
-            url: `${FRONTEND_URL}/assignedjobs?highlight={{1}}`,
-            example: ['test-assignment-id'],
-          },
-        ],
-      },
+      FOOTER,
+      viewJobButton(),
     ],
   },
+  // whatsapp.js → sendRejectionNotification
+  // {{1}}=name {{2}}=snagId {{3}}=priority {{4}}=location
+  // {{5}}=category {{6}}=assigner {{7}}=rejection remarks {{8}}=rejection count
   {
     name: 'foresites_snag_rejected',
     category: 'UTILITY',
     language: 'en',
     components: [
+      { type: 'HEADER', format: 'TEXT', text: 'ForeSites – SNAG REJECTED' },
       {
         type: 'BODY',
-        text: 'Foresites Review Update: Hello {{1}}, your submitted proof for the snag at site {{2}} has been reviewed and rejected. Reason: {{3}}. Please resubmit with the required corrections.',
-        example: { body_text: [['Pratik', 'Lodha Palava', 'Insufficient evidence provided']] },
+        text:
+          'Hi {{1}}, your work on the following snag has been sent back for rework.\n\n' +
+          'Snag ID: {{2}}\n' +
+          'Priority: {{3}}\n' +
+          'Location: {{4}}\n' +
+          'Category: {{5}}\n\n' +
+          'Rejection Remarks by {{6}}: "{{7}}"\n\n' +
+          'This is rejection #{{8}} for this snag. Please address the remarks and resubmit.',
+        example: {
+          body_text: [[
+            'Mihir',
+            'SNG-7797',
+            '🔴 Urgent',
+            'Cedar Complex',
+            'Workflow Issues',
+            'System Administrator superadmin',
+            'Insufficient evidence provided',
+            '2',
+          ]],
+        },
       },
-      {
-        type: 'BUTTONS',
-        buttons: [
-          {
-            type: 'URL',
-            text: 'View Job',
-            url: `${FRONTEND_URL}/assignedjobs?highlight={{1}}`,
-            example: ['test-assignment-id'],
-          },
-        ],
-      },
+      FOOTER,
+      viewJobButton(),
     ],
   },
+  // whatsapp.js → sendApprovalNotification
+  // {{1}}=name {{2}}=snagId {{3}}=location {{4}}=category
   {
     name: 'foresites_snag_approved',
     category: 'UTILITY',
     language: 'en',
     components: [
+      { type: 'HEADER', format: 'TEXT', text: 'ForeSites – SNAG CLOSED! ✅' },
       {
         type: 'BODY',
-        text: 'Foresites Resolution Confirmed: Hello {{1}}, your resolution for the snag at site {{2}} has been reviewed, approved, and marked as closed. Great work on getting this resolved!',
-        example: { body_text: [['Pratik', 'Lodha Palava']] },
+        text:
+          'Hi {{1}}, your work on the following snag has been approved and closed.\n\n' +
+          'Snag ID: {{2}}\n' +
+          'Location: {{3}}\n' +
+          'Category: {{4}}\n\n' +
+          'Great work — snag resolved successfully.',
+        example: {
+          body_text: [['Mihir', 'SNG-7797', 'Cedar Complex', 'Workflow Issues']],
+        },
       },
+      FOOTER,
+      viewJobButton(),
     ],
   },
 ];

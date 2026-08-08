@@ -4,6 +4,9 @@ const GRAPH_API = 'https://graph.facebook.com/v22.0';
 const PHONE_NUMBER_ID = process.env.WHATSAPP_PHONE_NUMBER_ID;
 const ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+// Must match the locale the templates are registered under on Meta (see whatsapp-templates/definitions.js).
+// Meta treats 'en' and 'en_US' as different templates — mismatch => error 132001.
+const TEMPLATE_LANG = process.env.WHATSAPP_TEMPLATE_LANG || 'en_US';
 
 // ── Helpers ──
 
@@ -102,7 +105,7 @@ async function sendTemplateMessage(to, templateName, bodyParams, buttonParam) {
         type: 'template',
         template: {
           name: templateName,
-          language: { code: 'en' },
+          language: { code: TEMPLATE_LANG },
           components,
         },
       },
@@ -202,7 +205,7 @@ function buildClosureFallback(ctx) {
  * Assignment: template "foresites_snag_assign"
  * Body params: {{1}}=name, {{2}}=assigner, {{3}}=snagId, {{4}}=priority,
  *              {{5}}=issue, {{6}}=location, {{7}}=category, {{8}}=remarks
- * Button param: {{1}}=snagId (for URL suffix)
+ * Button param: {{1}}=assignmentId (for URL suffix; frontend highlights by assignment_id)
  */
 async function sendAssignmentNotification(phone, ctx) {
   const assigner = assignerLabel(ctx);
@@ -222,10 +225,10 @@ async function sendAssignmentNotification(phone, ctx) {
     sanitizeParam(ctx.siteName || 'N/A'),           // {{6}}
     sanitizeParam(category),                         // {{7}}
     remarksBlock,                                    // {{8}}
-  ], ctx.snagId);
+  ], ctx.assignmentId);
 
   if (!result) {
-    const url = viewJobUrl(ctx.snagId);
+    const url = viewJobUrl(ctx.assignmentId);
     await sendTextMessage(phone, buildAssignmentFallback(ctx) + `\n\nView Job: ${url}`);
   }
 }
@@ -234,7 +237,7 @@ async function sendAssignmentNotification(phone, ctx) {
  * Rejection: template "foresites_snag_rejected"
  * Body params: {{1}}=name, {{2}}=snagId, {{3}}=priority, {{4}}=location,
  *              {{5}}=category, {{6}}=assigner, {{7}}=rejectionRemarks, {{8}}=count
- * Button param: {{1}}=snagId
+ * Button param: {{1}}=assignmentId
  */
 async function sendRejectionNotification(phone, ctx) {
   const assigner = assignerLabel(ctx);
@@ -251,10 +254,10 @@ async function sendRejectionNotification(phone, ctx) {
     sanitizeParam(assigner),                                        // {{6}}
     sanitizeParam(ctx.rejectionRemarks || 'No remarks provided'),  // {{7}}
     String(ctx.rejectionCount || 1),                                // {{8}}
-  ], ctx.snagId);
+  ], ctx.assignmentId);
 
   if (!result) {
-    const url = viewJobUrl(ctx.snagId);
+    const url = viewJobUrl(ctx.assignmentId);
     await sendTextMessage(phone, buildRejectionFallback(ctx) + `\n\nView Job: ${url}`);
   }
 }
@@ -263,7 +266,7 @@ async function sendRejectionNotification(phone, ctx) {
  * Escalation: template "foresites_snag_escalation"
  * Body params: {{1}}=name, {{2}}=assigner, {{3}}=snagId, {{4}}=priority,
  *              {{5}}=location, {{6}}=category, {{7}}=remarks
- * Button param: {{1}}=snagId
+ * Button param: {{1}}=assignmentId
  */
 async function sendEscalationNotification(phone, ctx) {
   const assigner = assignerLabel(ctx);
@@ -283,10 +286,10 @@ async function sendEscalationNotification(phone, ctx) {
     sanitizeParam(ctx.siteName || 'N/A'),           // {{5}}
     sanitizeParam(category),                         // {{6}}
     remarksBlock,                                    // {{7}}
-  ], ctx.snagId);
+  ], ctx.assignmentId);
 
   if (!result) {
-    const url = viewJobUrl(ctx.snagId);
+    const url = viewJobUrl(ctx.assignmentId);
     await sendTextMessage(phone, buildEscalationFallback(ctx) + `\n\nView Job: ${url}`);
   }
 }
@@ -294,7 +297,7 @@ async function sendEscalationNotification(phone, ctx) {
 /**
  * Closure/Approval: template "foresites_snag_approved"
  * Body params: {{1}}=name, {{2}}=snagId, {{3}}=location, {{4}}=category
- * Button param: {{1}}=snagId
+ * Button param: {{1}}=assignmentId
  */
 async function sendApprovalNotification(phone, ctx) {
   const snagId = formatSnagId(ctx.snagDbId);
@@ -305,10 +308,10 @@ async function sendApprovalNotification(phone, ctx) {
     snagId,                                          // {{2}}
     sanitizeParam(ctx.siteName || 'N/A'),           // {{3}}
     sanitizeParam(category),                         // {{4}}
-  ], ctx.snagId);
+  ], ctx.assignmentId);
 
   if (!result) {
-    const url = viewJobUrl(ctx.snagId);
+    const url = viewJobUrl(ctx.assignmentId);
     await sendTextMessage(phone, buildClosureFallback(ctx) + `\n\nView Job: ${url}`);
   }
 }

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<!--
+  Host at:  https://www.mihirmohite.in/foresite-redirect   (as index.html in that folder)
+  WhatsApp "View Job" opens:  .../foresite-redirect?highlight=<assignment_id>
+
+  Works from ANY device on your network:
+    • On the dev Mac itself  → localhost
+    • On a phone over Wi-Fi   → the .local name or the LAN IP
+  The page remembers the target that worked per-device (localStorage), so after the
+  first tap it auto-opens the right one every time.
+
+  ── Edit these two things when your setup changes ──
+    PORT   : the port your dashboard runs on
+    HOSTS  : candidate hosts. The .local name survives DHCP changes; the IP may drift.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opening ForeSites…</title>
+  <style>
+    :root{ --bg:#0b141a; --card:#111b21; --ink:#e9edef; --muted:#8696a0;
+           --accent:#25d366; --line:#22303a; }
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;
+      justify-content:center;gap:18px;padding:28px;
+      font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+      background:var(--bg);color:var(--ink)}
+    .dot{width:30px;height:30px;border:3px solid var(--accent);border-top-color:transparent;
+      border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    h1{font-size:1.05rem;margin:0;font-weight:600}
+    .snag{color:var(--muted);font-size:.8rem;font-family:ui-monospace,Menlo,monospace}
+    .choices{display:flex;flex-direction:column;gap:10px;width:100%;max-width:340px;margin-top:4px}
+    .choice{display:flex;flex-direction:column;gap:2px;text-decoration:none;
+      background:var(--card);border:1px solid var(--line);border-radius:12px;
+      padding:12px 14px;color:var(--ink)}
+    .choice:active{border-color:var(--accent)}
+    .choice .lbl{font-size:.92rem;font-weight:600}
+    .choice .url{font-size:.72rem;color:var(--muted);font-family:ui-monospace,Menlo,monospace;
+      word-break:break-all}
+    .choice.primary{border-color:var(--accent)}
+    .hint{color:var(--muted);font-size:.76rem;text-align:center;max-width:340px;line-height:1.5}
+  </style>
+</head>
+<body>
+  <div class="dot"></div>
+  <h1 id="status">Opening ForeSites…</h1>
+  <div class="snag" id="snag"></div>
+  <div class="choices" id="choices"></div>
+  <div class="hint">Tap the one that opens for you — this device will remember it next time.</div>
+
+  <script>
+    // ── config ──────────────────────────────────────────────
+    var PORT = 48317;
+    var HOSTS = [
+      { label: 'On this computer',      host: 'localhost' },
+      { label: 'Over Wi-Fi (name)',     host: 'Chinmayees-MacBook-Pro-2.local' },
+      { label: 'Over Wi-Fi (IP)',       host: '192.168.1.2' },
+      { label: 'Anywhere (Tailscale)',  host: '100.127.69.94' }  // the Mac's tailnet IP
+    ];
+    var ROUTE = '/assignedjobs';
+    var STORE_KEY = 'foresite_host';
+    // ────────────────────────────────────────────────────────
+
+    var params = new URLSearchParams(location.search);
+    var highlight = params.get('highlight') || '';
+    document.getElementById('snag').textContent =
+      highlight ? 'assignment ' + highlight : '';
+
+    function target(host){
+      return 'http://' + host + ':' + PORT + ROUTE +
+             (highlight ? '?highlight=' + encodeURIComponent(highlight) : '');
+    }
+
+    // Render the manual chooser (always available as fallback).
+    var remembered = null;
+    try { remembered = localStorage.getItem(STORE_KEY); } catch(e){}
+    var box = document.getElementById('choices');
+    HOSTS.forEach(function(h){
+      var a = document.createElement('a');
+      a.className = 'choice' + (h.host === remembered ? ' primary' : '');
+      a.href = target(h.host);
+      a.innerHTML = '<span class="lbl">' + h.label + '</span>' +
+                    '<span class="url">' + target(h.host) + '</span>';
+      a.addEventListener('click', function(){
+        try { localStorage.setItem(STORE_KEY, h.host); } catch(e){}
+      });
+      box.appendChild(a);
+    });
+
+    // If this device already picked a working host before, go straight there.
+    if (remembered) {
+      document.getElementById('status').textContent = 'Opening ForeSites…';
+      setTimeout(function(){ location.href = target(remembered); }, 400);
+    } else {
+      document.getElementById('status').textContent = 'How are you viewing this?';
+    }
+  </script>
+</body>
+</html>
