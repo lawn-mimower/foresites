@@ -1,11 +1,13 @@
-"""Local test for the Lambda agent — tests DB connection and writes."""
+"""Local test for the Lambda agent — tests DB connection and writes.
+
+Requires SUPABASE_DB_URL and GEMINI_API_KEY in the environment; see
+lambda-agent/.env.example.
+"""
 import os
 
-# Set env vars before importing anything
-os.environ["SUPABASE_DB_URL"] = "postgresql://postgres.isvtqntqjkoaaijmjxfa:***REMOVED-DB-PASSWORD***@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
-os.environ["SUPABASE_DB_WRITE_URL"] = os.environ["SUPABASE_DB_URL"]
-os.environ["GEMINI_API_KEY"] = "***REMOVED-GOOGLE-API-KEY***"
-os.environ["GEMINI_MODEL_ID"] = "gemini-2.0-flash"
+# db.py reads these at import time, so they must be set before importing it.
+os.environ.setdefault("SUPABASE_DB_WRITE_URL", os.environ["SUPABASE_DB_URL"])
+os.environ.setdefault("GEMINI_MODEL_ID", "gemini-2.0-flash")
 
 from db import get_write_conn, get_read_conn
 

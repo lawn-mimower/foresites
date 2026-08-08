@@ -1,12 +1,24 @@
-"""Test different Supabase connection methods."""
+"""Test different Supabase connection methods.
+
+Set whichever of these you want to exercise (see lambda-agent/.env.example):
+  SUPABASE_DB_URL          transaction pooler, port 6543
+  SUPABASE_DB_SESSION_URL  session pooler, port 5432
+  SUPABASE_DB_DIRECT_URL   direct connection, port 5432
+"""
+import os
+
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-TESTS = [
-    ("Transaction pooler (6543)", "postgresql://postgres.isvtqntqjkoaaijmjxfa:***REMOVED-DB-PASSWORD***@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"),
-    ("Session pooler (5432)", "postgresql://postgres.isvtqntqjkoaaijmjxfa:***REMOVED-DB-PASSWORD***@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"),
-    ("Direct connection", "postgresql://postgres:***REMOVED-DB-PASSWORD***@db.isvtqntqjkoaaijmjxfa.supabase.co:5432/postgres"),
+CANDIDATES = [
+    ("Transaction pooler (6543)", "SUPABASE_DB_URL"),
+    ("Session pooler (5432)", "SUPABASE_DB_SESSION_URL"),
+    ("Direct connection", "SUPABASE_DB_DIRECT_URL"),
 ]
+
+TESTS = [(name, os.environ[var]) for name, var in CANDIDATES if os.environ.get(var)]
+if not TESTS:
+    raise SystemExit("Set at least one of: " + ", ".join(var for _, var in CANDIDATES))
 
 for name, dsn in TESTS:
     print(f"\n--- {name} ---")

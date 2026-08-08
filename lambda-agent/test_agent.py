@@ -1,10 +1,13 @@
-"""Test the full agent loop locally."""
+"""Test the full agent loop locally.
+
+Requires SUPABASE_DB_URL and GEMINI_API_KEY in the environment; see
+lambda-agent/.env.example.
+"""
 import os
 
-os.environ["SUPABASE_DB_URL"] = "postgresql://postgres.isvtqntqjkoaaijmjxfa:***REMOVED-DB-PASSWORD***@aws-1-ap-southeast-1.pooler.supabase.com:6543/postgres"
-os.environ["SUPABASE_DB_WRITE_URL"] = os.environ["SUPABASE_DB_URL"]
-os.environ["GEMINI_API_KEY"] = "***REMOVED-GOOGLE-API-KEY***"
-os.environ["GEMINI_MODEL_ID"] = "gemini-2.5-flash"
+# tools.sql_tool and agent_loop read these at import time.
+os.environ.setdefault("SUPABASE_DB_WRITE_URL", os.environ["SUPABASE_DB_URL"])
+os.environ.setdefault("GEMINI_MODEL_ID", "gemini-2.5-flash")
 
 # Test SQL tool directly first
 print("--- Test SQL tool ---")

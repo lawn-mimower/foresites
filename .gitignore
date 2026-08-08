@@ -43,6 +43,14 @@ uploads/
 lambda-agent/seed_csvs/seed_data.sql
 
 # ============================================
+# Other generated artifacts
+# ============================================
+# matplotlib intermediates written by script-report/report-generate.py
+script-report/g*.png
+# rendered by whatsapp-templates/build-preview.js from definitions.js
+dashboard/backend/whatsapp-templates/preview.html
+
+# ============================================
 # OS & Editor
 # ============================================
 .DS_Store
