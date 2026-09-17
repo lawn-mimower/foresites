@@ -11,6 +11,10 @@ the people who find problems on site don't have to learn new software.
 An AI analytics layer sits on top, so you can ask "which site has the most open
 electrical snags this month?" in plain English and get an answer with a chart.
 
+## Built by
+
+**Shreyash Dhoot** · **Abhishek Karad** · **Mihir Mohite**
+
 ---
 
 ## How it works
