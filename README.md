@@ -11,8 +11,6 @@ the people who find problems on site don't have to learn new software.
 An AI analytics layer sits on top, so you can ask "which site has the most open
 electrical snags this month?" in plain English and get an answer with a chart.
 
-Built by OMNIFEED.
-
 ---
 
 ## How it works
@@ -55,8 +53,11 @@ Supporting directories:
 | [`schema/`](schema/) | Canonical Postgres DDL — **run this first on a new environment** |
 | [`config/`](config/) | Shared CSV/report paths, required by both Node apps |
 | [`script-report/`](script-report/) | Python PDF report generator, invoked as a subprocess by the API |
-| [`reports/`](reports/) | Append-only CSV data written at runtime |
-| [`temp/`](temp/), [`promo-video/`](promo-video/), [`concepts/`](concepts/), [`logos/`](logos/) | Demo data, marketing video, design mockups, brand assets |
+| [`docs/`](docs/) | Architecture notes |
+
+This repository carries the engineering only. Brand assets, promotional material,
+commercial documents and all runtime data — uploaded photos, voice notes, report CSVs,
+user and snag records — are deliberately excluded, as they contain real site data.
 
 ## Quick start
 
